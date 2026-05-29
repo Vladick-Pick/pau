@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+enum ParticipantStatus {
+  POTENTIAL
+  ACTIVE
+}
+
+enum BriefType {
+  POTENTIAL
+  ACTIVE
+  MODERATOR
+}
+
+enum SyncStatus {
+  SUCCESS
+  FAILED
+}
+
+enum PreparationEventStatus {
+  UPCOMING
+  PAST
+  CANCELED
+  UNKNOWN
+}
+
+enum EventParticipantKind {
+  POTENTIAL
+  ACTIVE
+}
+
+enum EventParticipantStatus {
+  INVITED
+  CONFIRMED
+  REFUSED
+  ATTENDED
+  MISSED
+  UNKNOWN
+}
+
+model Participant {
+  id               String            @id @default(cuid())
+  bitrixDealId     String?           @unique
+  bitrixContactId  String?           @unique
+  status           ParticipantStatus @default(POTENTIAL)
+  fullName         String
+  email            String?
+  phone            String?
+  telegram         String?
+  company          String?
+  position         String?
+  city             String?
+  sourceFormatSlug String?
+  sourcePayload    Json?
+  lastSyncedAt     DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  eventParticipants EventParticipant[]
+  visits           Visit[]
+  matchRuns        MatchRun[]
+  briefs           Brief[]
+}
+
+model EventFormat {
+  slug           String   @id
+  name           String
+  description    String
+  audience       String?
+  moderatorNotes String?
+  bitrixEventTypeIds String[] @default([])
+  matchingRules  Json?
+  promptPotential String   @default("")
+  promptActive   String   @default("")
+  promptModerator String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  events         Event[]
+  visits         Visit[]
+  briefs         Brief[]
+}
+
+model Event {
+  id            String      @id @default(cuid())
+  title         String
+  startsAt      DateTime?
+  endsAt        DateTime?
+  status        PreparationEventStatus @default(UNKNOWN)
+  bitrixEventId String?
+  bitrixSmartItemId String? @unique
+  bitrixEventTypeId String?
+  bitrixEventTypeLabel String?
+  formatSlug    String
+  format        EventFormat @relation(fields: [formatSlug], references: [slug])
+  sourcePayload  Json?
+  syncedAt      DateTime?
+  participants  EventParticipant[]
+  matchRuns     EventMatchRun[]
+  briefs        Brief[]
+  visits        Visit[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model EventParticipant {
+  id              String                 @id @default(cuid())
+  eventId         String
+  event           Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participantId   String?
+  participant     Participant?           @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  kind            EventParticipantKind   @default(POTENTIAL)
+  status          EventParticipantStatus @default(UNKNOWN)
+  bitrixVisitId   String?
+  bitrixDealId    String?
+  bitrixContactId String?
+  fullName        String
+  email           String?
+  phone           String?
+  telegram        String?
+  company         String?
+  position        String?
+  city            String?
+  age             Int?
+  gender          String?
+  businessMain    String?
+  businessExtra1  String?
+  businessExtra2  String?
+  businessExtra3  String?
+  enrichment      Json?
+  matchedScore    Float?
+  matchRationale  String?
+  sourcePayload   Json?
+  statusUpdatedAt DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  briefs          Brief[]
+
+  @@unique([eventId, bitrixVisitId])
+  @@unique([eventId, bitrixDealId])
+  @@index([eventId, status])
+  @@index([bitrixDealId])
+  @@index([bitrixContactId])
+}
+
+model Visit {
+  id            String      @id @default(cuid())
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  eventId       String?
+  event         Event?      @relation(fields: [eventId], references: [id])
+  formatSlug    String
+  format        EventFormat @relation(fields: [formatSlug], references: [slug])
+  attendedAt    DateTime
+  role          String      @default("guest")
+  notes         String?
+  createdAt     DateTime    @default(now())
+}
+
+model MatchRun {
+  id                   String      @id @default(cuid())
+  participantId        String
+  participant          Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  score                Float?
+  activeParticipantIds String[]
+  rationale            String?
+  suggestedFormatSlugs String[]
+  requestPayload       Json?
+  responsePayload      Json?
+  error                String?
+  createdAt            DateTime    @default(now())
+}
+
+model EventMatchRun {
+  id                     String   @id @default(cuid())
+  eventId                String
+  event                  Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activeParticipantIds   String[] @default([])
+  activeParticipantCount Int      @default(0)
+  rationale              String?
+  requestPayload         Json?
+  responsePayload        Json?
+  error                  String?
+  createdAt              DateTime @default(now())
+}
+
+model Brief {
+  id            String       @id @default(cuid())
+  participantId String?
+  participant   Participant? @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  eventId       String?
+  event         Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventParticipantId String?
+  eventParticipant   EventParticipant? @relation(fields: [eventParticipantId], references: [id], onDelete: Cascade)
+  briefType     BriefType
+  formatSlug    String?
+  format        EventFormat? @relation(fields: [formatSlug], references: [slug])
+  model         String
+  prompt        String
+  content       Json
+  rawContent    String?
+  version       Int          @default(1)
+  createdByRole Role
+  createdAt     DateTime     @default(now())
+}
+
+model AppUser {
+  id           String   @id @default(cuid())
+  login        String   @unique
+  displayName  String
+  role         Role     @default(VIEWER)
+  passwordHash String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SyncLog {
+  id           String     @id @default(cuid())
+  source       String
+  status       SyncStatus
+  bitrixDealId String?
+  message      String?
+  payload      Json?
+  createdAt    DateTime   @default(now())
+}
