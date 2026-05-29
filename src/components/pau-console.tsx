@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeftIcon,
@@ -36,7 +36,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -74,7 +79,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { SessionRole } from "@/lib/auth/session";
 import type {
-  PauBitrixEventCandidate,
   PauEvent,
   PauEventParticipant,
   PauFormat,
@@ -132,11 +136,6 @@ export function PauConsole({
     initialData.formats.map(toFormatDraft)
   );
   const [editingFormatSlug, setEditingFormatSlug] = useState<string | null>(null);
-  const [bitrixSearchQuery, setBitrixSearchQuery] = useState("Гостевая встреча");
-  const [bitrixCandidates, setBitrixCandidates] = useState<
-    PauBitrixEventCandidate[]
-  >([]);
-  const [selectedBitrixEventIds, setSelectedBitrixEventIds] = useState<string[]>([]);
   const [newUserRole, setNewUserRole] = useState<SessionRole>("VIEWER");
   const [notice, setNotice] = useState<ActionNotice>(null);
   const [isPending, startTransition] = useTransition();
@@ -159,7 +158,7 @@ export function PauConsole({
     selectedEvent?.participants[0] ??
     null;
 
-  async function refreshWorkspace() {
+  const refreshWorkspace = useCallback(async (options = { syncFormatDrafts: true }) => {
     const response = await fetch("/api/dashboard", { cache: "no-store" });
     const body = await response.json();
     if (!response.ok) {
@@ -171,9 +170,26 @@ export function PauConsole({
 
     const nextData = body as PauWorkspaceSnapshot;
     setData(nextData);
-    setFormatDrafts(nextData.formats.map(toFormatDraft));
+    if (options.syncFormatDrafts) {
+      setFormatDrafts(nextData.formats.map(toFormatDraft));
+    }
     return nextData;
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!data.autoSync.enabled) {
+      return;
+    }
+
+    const interval = window.setInterval(
+      () => {
+        void refreshWorkspace({ syncFormatDrafts: false }).catch(() => undefined);
+      },
+      data.autoSync.running ? 5000 : 60_000
+    );
+
+    return () => window.clearInterval(interval);
+  }, [data.autoSync.enabled, data.autoSync.running, refreshWorkspace]);
 
   function runAction(action: () => Promise<ActionNotice>) {
     setNotice(null);
@@ -189,56 +205,6 @@ export function PauConsole({
           message: error instanceof Error ? error.message : "Неизвестная ошибка",
         });
       }
-    });
-  }
-
-  function findBitrixEvents() {
-    runAction(async () => {
-      const response = await fetch(
-        `/api/bitrix/events?query=${encodeURIComponent(bitrixSearchQuery)}`,
-        { cache: "no-store" }
-      );
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.error ?? "Bitrix event search failed");
-      }
-      const events = (body.events ?? []) as PauBitrixEventCandidate[];
-      setBitrixCandidates(events);
-      setSelectedBitrixEventIds(events.map((event) => event.eventId));
-
-      return {
-        tone: "default",
-        title: "Мероприятия найдены",
-        message: `По запросу «${body.query ?? bitrixSearchQuery}» найдено: ${events.length}.`,
-      };
-    });
-  }
-
-  function toggleBitrixEvent(eventId: string) {
-    setSelectedBitrixEventIds((current) =>
-      current.includes(eventId)
-        ? current.filter((candidate) => candidate !== eventId)
-        : [...current, eventId]
-    );
-  }
-
-  function syncSelectedBitrixEvents() {
-    runAction(async () => {
-      const response = await fetch("/api/bitrix/sync-events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventIds: selectedBitrixEventIds }),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.error ?? "Bitrix sync failed");
-      }
-
-      return {
-        tone: "default",
-        title: "Синхронизация завершена",
-        message: `Выбрано: ${selectedBitrixEventIds.length}. Мероприятия: ${body.eventsSynced ?? 0}, участники: ${body.participantsSynced ?? 0}.`,
-      };
     });
   }
 
@@ -429,14 +395,7 @@ export function PauConsole({
           </div>
           <Button
             disabled={isPending}
-            onClick={() => runAction(async () => {
-              await refreshWorkspace();
-              return {
-                tone: "default",
-                title: "Данные обновлены",
-                message: "Snapshot загружен заново.",
-              };
-            })}
+            onClick={() => runAction(async () => null)}
             size="icon-sm"
             variant="outline"
           >
@@ -455,6 +414,13 @@ export function PauConsole({
             </Alert>
           ) : null}
 
+          {activeSection === "preparation" && !data.demoMode ? (
+            <BitrixAutoSyncPanel
+              autoSync={data.autoSync}
+              formats={data.formats}
+            />
+          ) : null}
+
           {notice ? (
             <Alert variant={notice.tone}>
               {notice.tone === "destructive" ? <XCircleIcon /> : <CheckCircle2Icon />}
@@ -465,18 +431,13 @@ export function PauConsole({
 
           {activeSection === "preparation" ? (
             <PreparationView
-              bitrixCandidates={bitrixCandidates}
-              bitrixSearchQuery={bitrixSearchQuery}
               canManage={canManage}
               data={data}
               isPending={isPending}
-              onBitrixEventToggle={toggleBitrixEvent}
               onBriefs={generateBriefs}
               onExport={(eventId) => {
                 window.location.href = `/api/events/${eventId}/export`;
               }}
-              onSearchQueryChange={setBitrixSearchQuery}
-              onSearchBitrixEvents={findBitrixEvents}
               onMatch={matchEvent}
               onParticipantSelect={setSelectedParticipantId}
               onSelectEvent={(eventId) => {
@@ -486,8 +447,6 @@ export function PauConsole({
                 );
                 setSelectedParticipantId(event?.participants[0]?.id ?? null);
               }}
-              onSync={syncSelectedBitrixEvents}
-              selectedBitrixEventIds={selectedBitrixEventIds}
               selectedEvent={selectedEvent}
               selectedEventId={selectedEventId}
               selectedParticipant={selectedParticipant}
@@ -536,40 +495,26 @@ export function PauConsole({
 }
 
 function PreparationView({
-  bitrixCandidates,
-  bitrixSearchQuery,
   canManage,
   data,
   isPending,
-  onBitrixEventToggle,
   onBriefs,
   onExport,
   onMatch,
   onParticipantSelect,
-  onSearchBitrixEvents,
-  onSearchQueryChange,
   onSelectEvent,
-  onSync,
-  selectedBitrixEventIds,
   selectedEvent,
   selectedEventId,
   selectedParticipant,
 }: {
-  bitrixCandidates: PauBitrixEventCandidate[];
-  bitrixSearchQuery: string;
   canManage: boolean;
   data: PauWorkspaceSnapshot;
   isPending: boolean;
-  onBitrixEventToggle: (eventId: string) => void;
   onBriefs: (eventId: string) => void;
   onExport: (eventId: string) => void;
   onMatch: (eventId: string) => void;
   onParticipantSelect: (participantId: string) => void;
-  onSearchBitrixEvents: () => void;
-  onSearchQueryChange: (value: string) => void;
   onSelectEvent: (eventId: string) => void;
-  onSync: () => void;
-  selectedBitrixEventIds: string[];
   selectedEvent: PauEvent | null;
   selectedEventId: string | null;
   selectedParticipant: PauEventParticipant | null;
@@ -581,22 +526,10 @@ function PreparationView({
           <div>
             <h2 className="text-sm font-medium">Ближайшие мероприятия</h2>
             <p className="text-xs text-muted-foreground">
-              Синхронизация только выбранных Bitrix-мероприятий
+              Список ближайших мероприятий из рабочей базы
             </p>
           </div>
         </div>
-        <BitrixEventPicker
-          candidates={bitrixCandidates}
-          canManage={canManage}
-          integrationEnabled={data.integrationStatus.bitrix}
-          isPending={isPending}
-          onQueryChange={onSearchQueryChange}
-          onSearch={onSearchBitrixEvents}
-          onSync={onSync}
-          onToggle={onBitrixEventToggle}
-          query={bitrixSearchQuery}
-          selectedIds={selectedBitrixEventIds}
-        />
         {data.upcomingEvents.length > 0 ? (
           <div className="flex flex-col gap-2">
             {data.upcomingEvents.map((event) => (
@@ -631,7 +564,9 @@ function PreparationView({
           <Empty>
             <EmptyHeader>
               <EmptyTitle>Нет ближайших мероприятий</EmptyTitle>
-              <EmptyDescription>Bitrix sync пока не вернул upcoming события.</EmptyDescription>
+              <EmptyDescription>
+                Синхронизация Bitrix пока не вернула ближайшие события.
+              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}
@@ -641,6 +576,7 @@ function PreparationView({
         <section className="flex min-w-0 flex-col gap-5">
           <EventHeader
             canManage={canManage}
+            databaseEnabled={!data.demoMode}
             event={selectedEvent}
             integrations={data.integrationStatus}
             isPending={isPending}
@@ -662,111 +598,66 @@ function PreparationView({
   );
 }
 
-function BitrixEventPicker({
-  candidates,
-  canManage,
-  integrationEnabled,
-  isPending,
-  onQueryChange,
-  onSearch,
-  onSync,
-  onToggle,
-  query,
-  selectedIds,
+function BitrixAutoSyncPanel({
+  autoSync,
+  formats,
 }: {
-  candidates: PauBitrixEventCandidate[];
-  canManage: boolean;
-  integrationEnabled: boolean;
-  isPending: boolean;
-  onQueryChange: (value: string) => void;
-  onSearch: () => void;
-  onSync: () => void;
-  onToggle: (eventId: string) => void;
-  query: string;
-  selectedIds: string[];
+  autoSync: PauWorkspaceSnapshot["autoSync"];
+  formats: PauFormat[];
 }) {
+  const queries = Array.from(
+    new Set(
+      formats
+        .map((format) => format.bitrixSyncTitleQuery.trim())
+        .filter(Boolean)
+    )
+  );
+  const lastLog = autoSync.lastLog;
+
   return (
     <div className="flex flex-col gap-3 rounded-md border bg-card p-3 text-card-foreground">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input
-          aria-label="Поиск Bitrix мероприятий"
-          disabled={isPending || !canManage || !integrationEnabled}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Гостевая встреча"
-          value={query}
-        />
-        <Button
-          disabled={isPending || !canManage || !integrationEnabled || !query.trim()}
-          onClick={onSearch}
-          size="sm"
-          variant="outline"
-        >
-          <RefreshCwIcon data-icon="inline-start" />
-          Найти
-        </Button>
-        <Button
-          disabled={
-            isPending ||
-            !canManage ||
-            !integrationEnabled ||
-            selectedIds.length === 0
-          }
-          onClick={onSync}
-          size="sm"
-        >
-          <Link2Icon data-icon="inline-start" />
-          Синхронизировать
-        </Button>
-      </div>
-
-      {candidates.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {candidates.map((candidate) => {
-            const checked = selectedIds.includes(candidate.eventId);
-            return (
-              <label
-                className={cn(
-                  "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-md border p-3 text-sm transition-colors hover:bg-accent",
-                  checked && "border-ring bg-accent"
-                )}
-                key={candidate.eventId}
-              >
-                <input
-                  checked={checked}
-                  className="mt-1 size-4 accent-primary"
-                  disabled={isPending || !canManage || !integrationEnabled}
-                  onChange={() => onToggle(candidate.eventId)}
-                  type="checkbox"
-                />
-                <span className="min-w-0">
-                  <span className="block truncate font-medium">
-                    {candidate.title}
-                  </span>
-                  <span className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span>{formatDate(candidate.eventDate)}</span>
-                    <span>id {candidate.eventId}</span>
-                    {candidate.eventTypeLabel ?? candidate.eventTypeId ? (
-                      <span>
-                        тип {candidate.eventTypeLabel ?? candidate.eventTypeId}
-                      </span>
-                    ) : null}
-                  </span>
-                </span>
-              </label>
-            );
-          })}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium">Автосинхронизация Bitrix</p>
+            <Badge variant={autoSync.enabled ? "secondary" : "outline"}>
+              {autoSync.enabled ? "каждый час" : "не настроена"}
+            </Badge>
+            {autoSync.running ? (
+              <Badge variant="outline">идет синхронизация</Badge>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Поиск идет по строкам из форматов:{" "}
+            {queries.length > 0 ? queries.join(", ") : "строки не заданы"}.
+          </p>
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p>
+              Последний запуск:{" "}
+              {lastLog ? `${formatDate(lastLog.createdAt)} · ${lastLog.status}` : "нет"}
+            </p>
+            {lastLog?.message ? <p>{lastLog.message}</p> : null}
+            <p>
+              Следующий запуск:{" "}
+              {autoSync.nextRunAt
+                ? formatDate(autoSync.nextRunAt)
+                : autoSync.running
+                  ? "после завершения текущей"
+                  : "после старта сервера"}
+            </p>
+            {autoSync.lastError ? (
+              <p className="text-destructive">Ошибка: {autoSync.lastError}</p>
+            ) : null}
+          </div>
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Для старта выбран формат: Гостевая встреча + дата встречи.
-        </p>
-      )}
+      </div>
     </div>
   );
 }
 
 function EventHeader({
   canManage,
+  databaseEnabled,
   event,
   integrations,
   isPending,
@@ -775,6 +666,7 @@ function EventHeader({
   onMatch,
 }: {
   canManage: boolean;
+  databaseEnabled: boolean;
   event: PauEvent;
   integrations: PauWorkspaceSnapshot["integrationStatus"];
   isPending: boolean;
@@ -800,7 +692,9 @@ function EventHeader({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
-            disabled={isPending || !canManage || !integrations.matching}
+            disabled={
+              isPending || !canManage || !databaseEnabled || !integrations.matching
+            }
             onClick={() => onMatch(event.id)}
             size="sm"
             variant="outline"
@@ -809,7 +703,9 @@ function EventHeader({
             Matching
           </Button>
           <Button
-            disabled={isPending || !canManage || !integrations.openrouter}
+            disabled={
+              isPending || !canManage || !databaseEnabled || !integrations.openrouter
+            }
             onClick={() => onBriefs(event.id)}
             size="sm"
             variant="outline"
@@ -817,7 +713,12 @@ function EventHeader({
             <FileTextIcon data-icon="inline-start" />
             Брифы
           </Button>
-          <Button onClick={() => onExport(event.id)} size="sm" variant="outline">
+          <Button
+            disabled={isPending || !databaseEnabled}
+            onClick={() => onExport(event.id)}
+            size="sm"
+            variant="outline"
+          >
             <DownloadIcon data-icon="inline-start" />
             Word
           </Button>
@@ -1035,6 +936,26 @@ function FormatsView({
                 />
               </Field>
               <Field>
+                <FieldLabel htmlFor={`${editingFormat.slug}-sync-query`}>
+                  Поиск Bitrix по названию
+                </FieldLabel>
+                <Input
+                  disabled={!canManage}
+                  id={`${editingFormat.slug}-sync-query`}
+                  onChange={(event) =>
+                    onChange(editingFormat.slug, {
+                      bitrixSyncTitleQuery: event.target.value,
+                    })
+                  }
+                  placeholder="Гостевая встреча"
+                  value={editingFormat.bitrixSyncTitleQuery}
+                />
+                <FieldDescription>
+                  Эта строка используется как запрос для поиска мероприятий перед
+                  синхронизацией.
+                </FieldDescription>
+              </Field>
+              <Field>
                 <FieldLabel htmlFor={`${editingFormat.slug}-bitrix`}>
                   Bitrix типы / категории
                 </FieldLabel>
@@ -1179,6 +1100,9 @@ function FormatSummaryCard({
         <p className="line-clamp-2 min-h-10 text-sm text-muted-foreground">
           {format.description || "Описание не заполнено"}
         </p>
+        <div className="text-xs text-muted-foreground">
+          Поиск: {format.bitrixSyncTitleQuery || "не задан"}
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {visibleLinks.length > 0 ? (
             visibleLinks.map((link) => (
@@ -1268,6 +1192,7 @@ function HistoryView({
         <section className="flex min-w-0 flex-col gap-5">
           <EventHeader
             canManage={false}
+            databaseEnabled={false}
             event={selectedEvent}
             integrations={{
               database: false,
@@ -1521,6 +1446,7 @@ function formatDraftToPatch(format: FormatDraft) {
     description: format.description,
     audience: format.audience,
     moderatorNotes: format.moderatorNotes,
+    bitrixSyncTitleQuery: format.bitrixSyncTitleQuery.trim(),
     bitrixEventTypeIds: format.bitrixEventTypeIdsText
       .split(",")
       .map((value) => value.trim())

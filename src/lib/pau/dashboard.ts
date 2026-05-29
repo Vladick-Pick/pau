@@ -9,6 +9,7 @@ import {
   type EventParticipantStatus,
   type PreparationEventStatus,
   type Role,
+  type SyncLog,
 } from "@prisma/client";
 import {
   Document,
@@ -17,6 +18,7 @@ import {
   Paragraph,
   TextRun,
 } from "docx";
+import { randomUUID } from "node:crypto";
 import net from "node:net";
 
 import {
@@ -39,6 +41,14 @@ import {
   isDatabaseConfigured,
 } from "@/lib/env";
 import { requestEventMatch } from "@/lib/matching/client";
+import {
+  BITRIX_AUTO_SYNC_INTERVAL_MS,
+  BITRIX_AUTO_SYNC_LOCK_KEY,
+  buildBitrixAutoSyncSearchPlan,
+  getBitrixAutoSyncLeaseExpiresAt,
+  shouldResetBitrixAutoSyncCursor,
+  shouldRunBitrixAutoSync,
+} from "@/lib/pau/auto-sync";
 import { demoSnapshot } from "@/lib/pau/demo-data";
 import { shouldUseDemoWorkspaceFallback } from "@/lib/pau/demo-fallback";
 import { resolvePauFormatForBitrixEvent } from "@/lib/pau/events";
@@ -81,6 +91,7 @@ type FormatPatch = {
   audience?: string | null;
   moderatorNotes?: string | null;
   bitrixEventTypeIds?: string[];
+  bitrixSyncTitleQuery?: string;
   matchingRules?: unknown;
   promptPotential?: string;
   promptActive?: string;
@@ -90,6 +101,29 @@ type FormatPatch = {
 type SyncEventsInput = {
   eventIds: string[];
 };
+
+type BitrixAutoSyncRuntime = {
+  timer: NodeJS.Timeout | null;
+  running: boolean;
+  lastStartedAt: Date | null;
+  lastFinishedAt: Date | null;
+  lastError: string | null;
+};
+
+type BitrixAutoSyncResult = {
+  queriesChecked: number;
+  eventsFound: number;
+  eventsSynced: number;
+  participantsSynced: number;
+};
+
+type BitrixAutoSyncLease = {
+  owner: string;
+};
+
+declare global {
+  var __pauBitrixAutoSync: BitrixAutoSyncRuntime | undefined;
+}
 
 export async function getPauWorkspaceSnapshot(): Promise<PauWorkspaceSnapshot> {
   const integrationStatus = getIntegrationStatus();
@@ -106,6 +140,8 @@ export async function getPauWorkspaceSnapshot(): Promise<PauWorkspaceSnapshot> {
 
   try {
     await ensureDefaultFormats();
+    const latestSyncLog = await loadLatestBitrixSyncLog();
+    startBitrixAutoSyncScheduler(latestSyncLog?.createdAt ?? null);
     const now = new Date();
     const [upcomingEvents, pastEvents, formats, briefs, users] =
       await Promise.all([
@@ -130,6 +166,7 @@ export async function getPauWorkspaceSnapshot(): Promise<PauWorkspaceSnapshot> {
     return {
       demoMode: false,
       integrationStatus,
+      autoSync: buildAutoSyncStatus(integrationStatus, latestSyncLog),
       summary: {
         upcomingEvents: upcomingEvents.length,
         pastEvents: pastEvents.length,
@@ -178,15 +215,29 @@ export async function getEvents(scope: "upcoming" | "past" | "all") {
   return events.map(mapEvent);
 }
 
-export async function listBitrixEventCandidates(input: { query: string }) {
-  const query = input.query.trim();
+export async function listBitrixEventCandidates(input: {
+  query: string;
+  modifiedAfter?: string | null;
+}) {
+  return listBitrixEventCandidatesWithClient(
+    new BitrixClient(),
+    input.query,
+    input.modifiedAfter ?? null
+  );
+}
+
+async function listBitrixEventCandidatesWithClient(
+  bitrix: BitrixClient,
+  queryInput: string,
+  modifiedAfter: string | null
+) {
+  const query = queryInput.trim();
   if (!query) {
     return [];
   }
 
-  const bitrix = new BitrixClient();
   const events = await bitrix.listEvents({
-    modifiedAfter: null,
+    modifiedAfter,
     titleSearch: query,
   });
 
@@ -485,6 +536,101 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
   return { eventsSynced, participantsSynced };
 }
 
+export async function syncBitrixEventsByFormatQueries(): Promise<BitrixAutoSyncResult> {
+  assertDatabase();
+  await ensureDefaultFormats();
+
+  const formats = await prisma.eventFormat.findMany({
+    select: { bitrixSyncTitleQuery: true },
+  });
+  const cursors = await prisma.bitrixAutoSyncCursor.findMany();
+  const searchPlan = buildBitrixAutoSyncSearchPlan(formats, cursors);
+  const syncStartedAt = new Date();
+
+  if (searchPlan.length === 0) {
+    await logSync("SUCCESS", "Auto sync skipped: no Bitrix title queries configured");
+    return {
+      queriesChecked: 0,
+      eventsFound: 0,
+      eventsSynced: 0,
+      participantsSynced: 0,
+    };
+  }
+
+  const bitrix = new BitrixClient();
+  const candidatesByQuery = await Promise.all(
+    searchPlan.map((search) =>
+      listBitrixEventCandidatesWithClient(
+        bitrix,
+        search.query,
+        search.modifiedAfter
+      )
+    )
+  );
+  const eventIds = uniqueStrings(
+    candidatesByQuery.flatMap((candidates) =>
+      candidates.map((candidate) => candidate.eventId)
+    )
+  );
+
+  if (eventIds.length === 0) {
+    await logSync(
+      "SUCCESS",
+      `Auto sync found no Bitrix events for ${searchPlan.length} format queries`
+    );
+    await saveBitrixAutoSyncCursors(searchPlan, syncStartedAt);
+    return {
+      queriesChecked: searchPlan.length,
+      eventsFound: 0,
+      eventsSynced: 0,
+      participantsSynced: 0,
+    };
+  }
+
+  const result = await syncEventsFromBitrix({ eventIds });
+  await saveBitrixAutoSyncCursors(searchPlan, syncStartedAt);
+  return {
+    queriesChecked: searchPlan.length,
+    eventsFound: eventIds.length,
+    ...result,
+  };
+}
+
+export function runBitrixAutoSyncNow() {
+  const runtime = getBitrixAutoSyncRuntime();
+  if (runtime.running) {
+    return {
+      started: false,
+      reason: "already_running",
+      ...runtimeToPlainState(runtime),
+    };
+  }
+
+  runtime.running = true;
+  runtime.lastStartedAt = new Date();
+  runtime.lastError = null;
+  void finishBitrixAutoSync(runtime);
+
+  return {
+    started: true,
+    ...runtimeToPlainState(runtime),
+  };
+}
+
+export function startBitrixAutoSyncScheduler(initialLastStartedAt: Date | null = null) {
+  const runtime = getBitrixAutoSyncRuntime();
+  runtime.lastStartedAt ??= initialLastStartedAt;
+
+  if (!runtime.timer) {
+    runtime.timer = setInterval(() => {
+      void runBitrixAutoSyncIfDue();
+    }, BITRIX_AUTO_SYNC_INTERVAL_MS);
+    runtime.timer.unref?.();
+  }
+
+  void runBitrixAutoSyncIfDue();
+}
+
 export async function runEventMatch(eventId: string) {
   assertDatabase();
   const endpoint = getRequiredEnv("MATCHING_API_ENDPOINT");
@@ -745,24 +891,43 @@ export async function updateFormats(patches: FormatPatch[]) {
   assertDatabase();
   const results: EventFormat[] = [];
   for (const patch of patches) {
-    results.push(
-      await prisma.eventFormat.upsert({
-        where: { slug: patch.slug },
-        update: formatPatchToData(patch),
-        create: {
-          slug: patch.slug,
-          name: patch.name ?? patch.slug,
-          description: patch.description ?? "",
-          audience: patch.audience,
-          moderatorNotes: patch.moderatorNotes,
-          bitrixEventTypeIds: patch.bitrixEventTypeIds ?? [],
-          matchingRules: jsonOrNull(patch.matchingRules),
-          promptPotential: patch.promptPotential ?? "",
-          promptActive: patch.promptActive ?? "",
-          promptModerator: patch.promptModerator ?? "",
-        },
-      })
-    );
+    const previousFormat =
+      patch.bitrixSyncTitleQuery === undefined
+        ? null
+        : await prisma.eventFormat.findUnique({
+            where: { slug: patch.slug },
+            select: { bitrixSyncTitleQuery: true },
+          });
+    const format = await prisma.eventFormat.upsert({
+      where: { slug: patch.slug },
+      update: formatPatchToData(patch),
+      create: {
+        slug: patch.slug,
+        name: patch.name ?? patch.slug,
+        description: patch.description ?? "",
+        audience: patch.audience,
+        moderatorNotes: patch.moderatorNotes,
+        bitrixEventTypeIds: patch.bitrixEventTypeIds ?? [],
+        bitrixSyncTitleQuery: patch.bitrixSyncTitleQuery ?? "",
+        matchingRules: jsonOrNull(patch.matchingRules),
+        promptPotential: patch.promptPotential ?? "",
+        promptActive: patch.promptActive ?? "",
+        promptModerator: patch.promptModerator ?? "",
+      },
+    });
+    if (
+      patch.bitrixSyncTitleQuery !== undefined &&
+      shouldResetBitrixAutoSyncCursor(
+        previousFormat?.bitrixSyncTitleQuery,
+        format.bitrixSyncTitleQuery
+      )
+    ) {
+      await prisma.bitrixAutoSyncCursor.deleteMany({
+        where: { query: format.bitrixSyncTitleQuery.trim() },
+      });
+    }
+
+    results.push(format);
   }
 
   return results.map(mapFormat);
@@ -874,6 +1039,192 @@ export function getIntegrationStatus(): PauIntegrationStatus {
     ),
     openrouter: Boolean(getOptionalEnv("OPENROUTER_API_KEY")),
   };
+}
+
+async function runBitrixAutoSyncIfDue() {
+  const integrationStatus = getIntegrationStatus();
+  if (!integrationStatus.database || !integrationStatus.bitrix) {
+    return;
+  }
+
+  if (!(await canUseDatabase(integrationStatus))) {
+    return;
+  }
+
+  const runtime = getBitrixAutoSyncRuntime();
+  if (!runtime.lastStartedAt) {
+    const latestSyncLog = await loadLatestBitrixSyncLog();
+    runtime.lastStartedAt = latestSyncLog?.createdAt ?? null;
+  }
+
+  if (
+    !shouldRunBitrixAutoSync({
+      intervalMs: BITRIX_AUTO_SYNC_INTERVAL_MS,
+      lastStartedAt: runtime.lastStartedAt,
+      now: new Date(),
+      running: runtime.running,
+    })
+  ) {
+    return;
+  }
+
+  runBitrixAutoSyncNow();
+}
+
+async function finishBitrixAutoSync(runtime: BitrixAutoSyncRuntime) {
+  let lease: BitrixAutoSyncLease | null = null;
+
+  try {
+    lease = await acquireBitrixAutoSyncLease();
+    if (!lease) {
+      runtime.lastFinishedAt = new Date();
+      return;
+    }
+
+    await syncBitrixEventsByFormatQueries();
+    runtime.lastFinishedAt = new Date();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown auto sync error";
+    runtime.lastError = message;
+    runtime.lastFinishedAt = new Date();
+    try {
+      await logSync("FAILED", `Auto sync failed: ${message}`);
+    } catch {
+      // The in-memory status still needs to be cleared even if the database log fails.
+    }
+  } finally {
+    if (lease) {
+      try {
+        await releaseBitrixAutoSyncLease(lease);
+      } catch {
+        // A stale lease can expire naturally; do not keep the process-local flag stuck.
+      }
+    }
+    runtime.running = false;
+  }
+}
+
+function getBitrixAutoSyncRuntime() {
+  globalThis.__pauBitrixAutoSync ??= {
+    timer: null,
+    running: false,
+    lastStartedAt: null,
+    lastFinishedAt: null,
+    lastError: null,
+  };
+  return globalThis.__pauBitrixAutoSync;
+}
+
+function runtimeToPlainState(runtime: BitrixAutoSyncRuntime) {
+  return {
+    running: runtime.running,
+    lastStartedAt: runtime.lastStartedAt?.toISOString() ?? null,
+    lastFinishedAt: runtime.lastFinishedAt?.toISOString() ?? null,
+    lastError: runtime.lastError,
+  };
+}
+
+async function loadLatestBitrixSyncLog() {
+  return prisma.syncLog.findFirst({
+    where: { source: "BITRIX24_EVENTS" },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+function buildAutoSyncStatus(
+  integrationStatus: PauIntegrationStatus,
+  latestSyncLog: SyncLog | null
+): PauWorkspaceSnapshot["autoSync"] {
+  const runtime = getBitrixAutoSyncRuntime();
+  const enabled = integrationStatus.database && integrationStatus.bitrix;
+  const lastStartedAt = runtime.lastStartedAt ?? latestSyncLog?.createdAt ?? null;
+  const nextRunAt =
+    enabled && lastStartedAt && !runtime.running
+      ? new Date(lastStartedAt.getTime() + BITRIX_AUTO_SYNC_INTERVAL_MS)
+      : null;
+
+  return {
+    enabled,
+    intervalMinutes: BITRIX_AUTO_SYNC_INTERVAL_MS / 60_000,
+    running: runtime.running,
+    lastStartedAt: runtime.lastStartedAt?.toISOString() ?? null,
+    lastFinishedAt: runtime.lastFinishedAt?.toISOString() ?? null,
+    lastError: runtime.lastError,
+    nextRunAt: nextRunAt?.toISOString() ?? null,
+    lastLog: latestSyncLog
+      ? {
+          status: latestSyncLog.status,
+          message: latestSyncLog.message,
+          createdAt: latestSyncLog.createdAt.toISOString(),
+        }
+      : null,
+  };
+}
+
+async function acquireBitrixAutoSyncLease(): Promise<BitrixAutoSyncLease | null> {
+  const lockedAt = new Date();
+  const expiresAt = getBitrixAutoSyncLeaseExpiresAt(lockedAt);
+  const owner = randomUUID();
+
+  try {
+    await prisma.autoSyncLock.create({
+      data: {
+        key: BITRIX_AUTO_SYNC_LOCK_KEY,
+        owner,
+        lockedAt,
+        expiresAt,
+      },
+    });
+    return { owner };
+  } catch (error) {
+    if (
+      !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+      error.code !== "P2002"
+    ) {
+      throw error;
+    }
+  }
+
+  const result = await prisma.autoSyncLock.updateMany({
+    where: {
+      key: BITRIX_AUTO_SYNC_LOCK_KEY,
+      expiresAt: { lte: lockedAt },
+    },
+    data: {
+      owner,
+      lockedAt,
+      expiresAt,
+    },
+  });
+
+  return result.count === 1 ? { owner } : null;
+}
+
+async function releaseBitrixAutoSyncLease(lease: BitrixAutoSyncLease) {
+  await prisma.autoSyncLock.deleteMany({
+    where: {
+      key: BITRIX_AUTO_SYNC_LOCK_KEY,
+      owner: lease.owner,
+    },
+  });
+}
+
+async function saveBitrixAutoSyncCursors(
+  searchPlan: Array<{ query: string }>,
+  lastSyncedAt: Date
+) {
+  await prisma.$transaction(
+    searchPlan.map((search) =>
+      prisma.bitrixAutoSyncCursor.upsert({
+        where: { query: search.query },
+        update: { lastSyncedAt },
+        create: {
+          query: search.query,
+          lastSyncedAt,
+        },
+      })
+    )
+  );
 }
 
 async function loadEvents(input: {
@@ -992,6 +1343,7 @@ function mapFormat(format: EventFormat): PauFormat {
     audience: format.audience,
     moderatorNotes: format.moderatorNotes,
     bitrixEventTypeIds: format.bitrixEventTypeIds,
+    bitrixSyncTitleQuery: format.bitrixSyncTitleQuery,
     matchingRules: format.matchingRules,
     promptPotential: format.promptPotential,
     promptActive: format.promptActive,
@@ -1147,6 +1499,7 @@ async function ensureDefaultFormats() {
       audience: "Потенциальные и активные участники",
       moderatorNotes: "Проверить состав и персональные связки.",
       bitrixEventTypeIds: ["гостевая", "гость", "знакомство"],
+      bitrixSyncTitleQuery: "Гостевая встреча",
       matchingRules: {
         goal: "Подобрать активных участников по релевантности и доверию.",
       },
@@ -1208,6 +1561,7 @@ function formatPatchToData(patch: FormatPatch): Prisma.EventFormatUpdateInput {
     audience: patch.audience,
     moderatorNotes: patch.moderatorNotes,
     bitrixEventTypeIds: patch.bitrixEventTypeIds,
+    bitrixSyncTitleQuery: patch.bitrixSyncTitleQuery,
     matchingRules:
       patch.matchingRules === undefined ? undefined : jsonOrNull(patch.matchingRules),
     promptPotential: patch.promptPotential,

@@ -8,6 +8,16 @@ export const demoSnapshot: PauWorkspaceSnapshot = {
     matching: false,
     openrouter: false,
   },
+  autoSync: {
+    enabled: false,
+    intervalMinutes: 60,
+    running: false,
+    lastStartedAt: null,
+    lastFinishedAt: null,
+    lastError: null,
+    nextRunAt: null,
+    lastLog: null,
+  },
   summary: {
     upcomingEvents: 3,
     pastEvents: 2,
@@ -25,6 +35,7 @@ export const demoSnapshot: PauWorkspaceSnapshot = {
       audience: "Гости, активные участники, модератор",
       moderatorNotes: "Проверить персональные связки и роли активных участников.",
       bitrixEventTypeIds: ["guest-meeting"],
+      bitrixSyncTitleQuery: "Гостевая встреча",
       matchingRules: {
         goal: "Релевантные активные участники для доверия и интро.",
       },
@@ -42,6 +53,7 @@ export const demoSnapshot: PauWorkspaceSnapshot = {
       audience: "Участники с релевантным опытом",
       moderatorNotes: "Вывести участников на конкретные кейсы.",
       bitrixEventTypeIds: ["working-group"],
+      bitrixSyncTitleQuery: "Рабочая группа",
       matchingRules: { goal: "Опыт, запрос и тематическая релевантность." },
       promptPotential: "Опиши связь гостя с темой рабочей группы.",
       promptActive: "Опиши вклад активного участника в дискуссию.",

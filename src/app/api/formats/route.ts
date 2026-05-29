@@ -10,6 +10,7 @@ const formatPatchSchema = z.object({
   audience: z.string().nullable().optional(),
   moderatorNotes: z.string().nullable().optional(),
   bitrixEventTypeIds: z.array(z.string()).optional(),
+  bitrixSyncTitleQuery: z.string().optional(),
   matchingRules: z.unknown().optional(),
   promptPotential: z.string().optional(),
   promptActive: z.string().optional(),

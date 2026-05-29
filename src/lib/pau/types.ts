@@ -4,6 +4,7 @@ import type {
   EventParticipantStatus,
   PreparationEventStatus,
   Role,
+  SyncStatus,
 } from "@prisma/client";
 
 export type PauIntegrationStatus = {
@@ -29,6 +30,7 @@ export type PauFormat = {
   audience: string | null;
   moderatorNotes: string | null;
   bitrixEventTypeIds: string[];
+  bitrixSyncTitleQuery: string;
   matchingRules: unknown;
   promptPotential: string;
   promptActive: string;
@@ -127,9 +129,25 @@ export type PauUser = {
   createdAt: string;
 };
 
+export type PauAutoSyncStatus = {
+  enabled: boolean;
+  intervalMinutes: number;
+  running: boolean;
+  lastStartedAt: string | null;
+  lastFinishedAt: string | null;
+  lastError: string | null;
+  nextRunAt: string | null;
+  lastLog: {
+    status: SyncStatus;
+    message: string | null;
+    createdAt: string;
+  } | null;
+};
+
 export type PauWorkspaceSnapshot = {
   demoMode: boolean;
   integrationStatus: PauIntegrationStatus;
+  autoSync: PauAutoSyncStatus;
   summary: PauSummary;
   upcomingEvents: PauEvent[];
   pastEvents: PauEvent[];

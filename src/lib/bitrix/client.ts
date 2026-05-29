@@ -127,6 +127,9 @@ export class BitrixClient {
   private readonly fetcher: typeof fetch;
   private readonly timeoutMs: number;
   private readonly requestIntervalMs: number;
+  private eventMetadataPromise: Promise<EventDiscoveryMetadata | null> | null = null;
+  private eventItemMetadataPromise: Promise<EventItemDiscoveryMetadata | null> | null =
+    null;
 
   constructor(options: BitrixClientOptions = {}) {
     this.webhookUrl = resolveWebhookUrl(options);
@@ -296,7 +299,7 @@ export class BitrixClient {
     titleSearch?: string;
     eventIds?: string[];
   }): Promise<BitrixEvent[]> {
-    const metadata = await this.discoverEventItemMetadata();
+    const metadata = await this.getEventItemMetadata();
     if (!metadata) {
       return [];
     }
@@ -365,7 +368,7 @@ export class BitrixClient {
     reportYear: number;
     eventIds?: string[];
   }): Promise<BitrixEventVisit[]> {
-    const metadata = await this.discoverEventMetadata();
+    const metadata = await this.getEventMetadata();
     if (!metadata) {
       return [];
     }
@@ -467,6 +470,11 @@ export class BitrixClient {
     return rows;
   }
 
+  private async getEventMetadata(): Promise<EventDiscoveryMetadata | null> {
+    this.eventMetadataPromise ??= this.discoverEventMetadata();
+    return this.eventMetadataPromise;
+  }
+
   private async discoverEventMetadata(): Promise<EventDiscoveryMetadata | null> {
     const types = await this.getSmartProcessTypes();
     const type = types.types.find(
@@ -497,8 +505,13 @@ export class BitrixClient {
     };
   }
 
+  private async getEventItemMetadata(): Promise<EventItemDiscoveryMetadata | null> {
+    this.eventItemMetadataPromise ??= this.discoverEventItemMetadata();
+    return this.eventItemMetadataPromise;
+  }
+
   private async discoverEventItemMetadata(): Promise<EventItemDiscoveryMetadata | null> {
-    const visitMetadata = await this.discoverEventMetadata();
+    const visitMetadata = await this.getEventMetadata();
     if (!visitMetadata?.eventEntityTypeId) {
       return null;
     }

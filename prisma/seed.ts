@@ -12,6 +12,7 @@ const formats = [
     moderatorNotes:
       "Перед началом проверить состав гостей, активных участников и персональные точки для интро.",
     bitrixEventTypeIds: ["guest-meeting"],
+    bitrixSyncTitleQuery: "Гостевая встреча",
     matchingRules: {
       goal: "Подобрать активных участников, которые усиливают доверие, отраслевую релевантность и вероятность следующего шага.",
     },
@@ -29,6 +30,7 @@ const formats = [
     audience: "Активные участники и кандидаты с релевантным опытом",
     moderatorNotes: "Подготовить 3-4 вопроса, где участники могут дать конкретику.",
     bitrixEventTypeIds: ["working-group"],
+    bitrixSyncTitleQuery: "Рабочая группа",
     matchingRules: {
       goal: "Собрать активных участников с близким опытом, экспертизой или запросом.",
     },
@@ -46,6 +48,7 @@ const formats = [
     audience: "Участники с выраженным запросом на экспертизу",
     moderatorNotes: "Собрать вводные заранее и отметить риски несоответствия ожиданий.",
     bitrixEventTypeIds: ["expert-dialogue"],
+    bitrixSyncTitleQuery: "Диалог с экспертом",
     matchingRules: {
       goal: "Подобрать активных участников, которые усилят экспертную дискуссию и последующие интро.",
     },
