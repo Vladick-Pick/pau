@@ -814,7 +814,7 @@ function EventWorkspace({
       ) : null}
       <div
         className={cn(
-          "grid gap-5",
+          "grid min-w-0 gap-5",
           selectedParticipant && "2xl:grid-cols-[minmax(0,1fr)_360px]"
         )}
       >
@@ -1137,7 +1137,7 @@ function ParticipantsTable({
   selectedParticipantId: string | null;
 }) {
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border">
+    <div className="w-full min-w-0 overflow-hidden rounded-md border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -1221,8 +1221,24 @@ function ParticipantDetails({
 }: {
   participant: PauEventParticipant;
 }) {
+  const profileFacts = [
+    { label: "Должность", value: participant.position },
+    { label: "Город", value: participant.city },
+    { label: "Филиал клуба", value: participant.clubBranch },
+    { label: "Заказчик куда поставляем", value: participant.clubCustomer },
+    {
+      label: "Возраст / пол",
+      value: [participant.age, participant.gender].filter(Boolean).join(" · "),
+    },
+  ];
+  const matchingFacts = [
+    { label: "Score", value: participant.matchedScore?.toFixed(2) },
+    { label: "Rationale", value: participant.matchRationale },
+    { label: "Бриф", value: participant.briefSummary },
+  ].filter((fact) => fact.value);
+
   return (
-    <aside className="flex flex-col gap-4 rounded-md border bg-card p-4 text-card-foreground">
+    <aside className="min-w-0 rounded-md border bg-card p-4 text-card-foreground">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">{participant.fullName}</p>
@@ -1232,45 +1248,60 @@ function ParticipantDetails({
         </div>
         <KindBadge kind={participant.kind} />
       </div>
-      <Separator />
-      <Detail label="Должность" value={participant.position} />
-      <Detail label="Город" value={participant.city} />
-      <Detail label="Филиал клуба" value={participant.clubBranch} />
-      <Detail label="Заказчик куда поставляем" value={participant.clubCustomer} />
-      <Detail label="Возраст / пол" value={[participant.age, participant.gender].filter(Boolean).join(" · ")} />
-      <Separator />
-      <BusinessBlockDetails
-        block={participant.businessProfile?.main ?? null}
-        fallbackSphere={participant.businessMain}
-        title="Основной бизнес"
-      />
-      <BusinessBlockDetails
-        block={participant.businessProfile?.extra1 ?? null}
-        fallbackSphere={participant.businessExtra1}
-        title="Доп бизнес 1"
-      />
-      <BusinessBlockDetails
-        block={participant.businessProfile?.extra2 ?? null}
-        fallbackSphere={participant.businessExtra2}
-        title="Доп бизнес 2"
-      />
-      <BusinessBlockDetails
-        block={participant.businessProfile?.extra3 ?? null}
-        fallbackSphere={participant.businessExtra3}
-        title="Доп бизнес 3"
-      />
-      <KeyValueDetails
-        emptyText="Не заполнено"
-        items={participant.enrichment}
-        labels={enrichmentLabels}
-        showEmptyRows
-        title="Обогащение"
-      />
-      <Separator />
-      <LongDetail label="Комментарий Bitrix" value={participant.bitrixComment} />
-      <Detail label="Score" value={participant.matchedScore?.toFixed(2)} />
-      <Detail label="Rationale" value={participant.matchRationale} />
-      <Detail label="Бриф" value={participant.briefSummary} />
+
+      <section className="mt-4 border-t pt-4">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-2">
+          {profileFacts.map((fact) => (
+            <Detail key={fact.label} label={fact.label} value={fact.value} />
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-4 grid gap-4 border-t pt-4 xl:grid-cols-2 2xl:grid-cols-1">
+        <BusinessBlockDetails
+          block={participant.businessProfile?.main ?? null}
+          fallbackSphere={participant.businessMain}
+          title="Основной бизнес"
+        />
+        <BusinessBlockDetails
+          block={participant.businessProfile?.extra1 ?? null}
+          fallbackSphere={participant.businessExtra1}
+          title="Доп бизнес 1"
+        />
+        <BusinessBlockDetails
+          block={participant.businessProfile?.extra2 ?? null}
+          fallbackSphere={participant.businessExtra2}
+          title="Доп бизнес 2"
+        />
+        <BusinessBlockDetails
+          block={participant.businessProfile?.extra3 ?? null}
+          fallbackSphere={participant.businessExtra3}
+          title="Доп бизнес 3"
+        />
+      </section>
+
+      <section className="mt-4 border-t pt-4">
+        <KeyValueDetails
+          emptyText="Не заполнено"
+          items={participant.enrichment}
+          labels={enrichmentLabels}
+          showEmptyRows
+          title="Обогащение"
+        />
+      </section>
+
+      {participant.bitrixComment || matchingFacts.length > 0 ? (
+        <section className="mt-4 grid gap-4 border-t pt-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)] 2xl:grid-cols-1">
+          <LongDetail label="Комментарий Bitrix" value={participant.bitrixComment} />
+          {matchingFacts.length > 0 ? (
+            <div className="grid gap-x-4 gap-y-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-1">
+              {matchingFacts.map((fact) => (
+                <Detail key={fact.label} label={fact.label} value={fact.value} />
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </aside>
   );
 }
@@ -1908,11 +1939,11 @@ function Count({ label, value }: { label: string; value: number | string }) {
 
 function Detail({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[11px] font-medium uppercase text-muted-foreground">
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-[11px] font-medium uppercase leading-4 text-muted-foreground">
         {label}
       </span>
-      <span className="text-sm">{value || "Не заполнено"}</span>
+      <span className="break-words text-sm leading-5">{value || "Не заполнено"}</span>
     </div>
   );
 }
@@ -1924,10 +1955,10 @@ function LongDetail({ label, value }: { label: string; value?: string | null }) 
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[11px] font-medium uppercase text-muted-foreground">
+      <span className="text-[11px] font-medium uppercase leading-4 text-muted-foreground">
         {label}
       </span>
-      <p className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border bg-background p-2 text-sm leading-6">
+      <p className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm leading-6">
         {value}
       </p>
     </div>
@@ -2006,17 +2037,19 @@ function KeyValueDetails({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-medium uppercase text-muted-foreground">
+      <span className="text-[11px] font-medium uppercase leading-4 text-muted-foreground">
         {title}
       </span>
       {rows.length > 0 ? (
-        <dl className="grid gap-1.5 text-sm">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-1">
           {rows.map((row) => (
-            <div className="grid gap-0.5" key={row.key}>
-              <dt className="text-[11px] text-muted-foreground">{row.label}</dt>
+            <div className="grid min-w-0 gap-0.5" key={row.key}>
+              <dt className="text-[11px] leading-4 text-muted-foreground">
+                {row.label}
+              </dt>
               <dd
                 className={cn(
-                  "break-words",
+                  "break-words leading-5",
                   row.isEmpty && "text-muted-foreground"
                 )}
               >
