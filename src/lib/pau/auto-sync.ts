@@ -7,6 +7,12 @@ type BitrixAutoSyncCursor = {
   lastSyncedAt: Date;
 };
 
+export type BitrixAutoSyncSearchPlanItem = {
+  eventModifiedAfter: string | null;
+  query: string;
+  visitModifiedAfter: string | null;
+};
+
 export function selectBitrixAutoSyncQueries(
   formats: Array<{ bitrixSyncTitleQuery?: string | null }>
 ) {
@@ -22,14 +28,76 @@ export function selectBitrixAutoSyncQueries(
 export function buildBitrixAutoSyncSearchPlan(
   formats: Array<{ bitrixSyncTitleQuery?: string | null }>,
   cursors: BitrixAutoSyncCursor[]
-) {
+): BitrixAutoSyncSearchPlanItem[] {
   const cursorByQuery = new Map(
     cursors.map((cursor) => [cursor.query, cursor.lastSyncedAt])
   );
 
   return selectBitrixAutoSyncQueries(formats).map((query) => ({
+    eventModifiedAfter: null,
     query,
-    modifiedAfter: cursorByQuery.get(query)?.toISOString() ?? null,
+    visitModifiedAfter: cursorByQuery.get(query)?.toISOString() ?? null,
+  }));
+}
+
+export async function collectBitrixAutoSyncCandidatesSequentially<
+  Candidate extends { eventId: string },
+>(
+  searchPlan: BitrixAutoSyncSearchPlanItem[],
+  listCandidates: (search: BitrixAutoSyncSearchPlanItem) => Promise<Candidate[]>
+) {
+  const results: Array<{
+    candidates: Candidate[];
+    search: BitrixAutoSyncSearchPlanItem;
+  }> = [];
+
+  for (const search of searchPlan) {
+    results.push({
+      search,
+      candidates: await listCandidates(search),
+    });
+  }
+
+  return results;
+}
+
+export function groupBitrixAutoSyncEventIdsByVisitCursor(
+  results: Array<{
+    candidates: Array<{ eventId: string }>;
+    search: Pick<BitrixAutoSyncSearchPlanItem, "visitModifiedAfter">;
+  }>
+) {
+  const cursorByEventId = new Map<string, string | null>();
+
+  for (const result of results) {
+    for (const candidate of result.candidates) {
+      const eventId = candidate.eventId.trim();
+      if (!eventId) {
+        continue;
+      }
+
+      const nextCursor = result.search.visitModifiedAfter;
+      const currentCursor = cursorByEventId.get(eventId);
+      if (
+        !cursorByEventId.has(eventId) ||
+        shouldUseEarlierVisitCursor(currentCursor, nextCursor)
+      ) {
+        cursorByEventId.set(eventId, nextCursor);
+      }
+    }
+  }
+
+  const eventIdsByCursor = new Map<string | null, string[]>();
+  for (const [eventId, modifiedAfter] of cursorByEventId) {
+    eventIdsByCursor.set(modifiedAfter, [
+      ...(eventIdsByCursor.get(modifiedAfter) ?? []),
+      eventId,
+    ]);
+  }
+
+  return Array.from(eventIdsByCursor, ([modifiedAfter, eventIds]) => ({
+    modifiedAfter,
+    eventIds,
   }));
 }
 
@@ -68,4 +136,19 @@ export function shouldResetBitrixAutoSyncCursor(
   const previous = previousQuery?.trim() ?? "";
   const next = nextQuery?.trim() ?? "";
   return Boolean(next) && previous !== next;
+}
+
+function shouldUseEarlierVisitCursor(
+  currentCursor: string | null | undefined,
+  nextCursor: string | null
+) {
+  if (!currentCursor) {
+    return false;
+  }
+
+  if (!nextCursor) {
+    return true;
+  }
+
+  return new Date(nextCursor).getTime() < new Date(currentCursor).getTime();
 }

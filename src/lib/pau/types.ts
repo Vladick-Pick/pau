@@ -35,6 +35,42 @@ export type PauFormat = {
   promptPotential: string;
   promptActive: string;
   promptModerator: string;
+  promptReport: string;
+};
+
+export type PauBusinessBlock = {
+  sphere: string | null;
+  specifics: string | null;
+  role: string | null;
+  experience: string | null;
+  okved: string | null;
+  sharePercent: string | null;
+  revenue: string | null;
+  rusprofileUrl: string | null;
+  siteUrl: string | null;
+};
+
+export type PauBusinessProfile = {
+  main: PauBusinessBlock | null;
+  extra1: PauBusinessBlock | null;
+  extra2: PauBusinessBlock | null;
+  extra3: PauBusinessBlock | null;
+};
+
+export type PauEnrichmentProfile = {
+  [key: string]: string | null | undefined;
+  keyProjects?: string | null;
+  clubConnections?: string | null;
+  wasInCommunity?: string | null;
+  previousCommunities?: string | null;
+  clubGoals?: string | null;
+  hobbies?: string | null;
+  personalIncome?: string | null;
+  mentionsLinks?: string | null;
+  additionalInfo?: string | null;
+  familyKids?: string | null;
+  newProjects?: string | null;
+  usefulForClub?: string | null;
 };
 
 export type PauEventParticipant = {
@@ -51,15 +87,20 @@ export type PauEventParticipant = {
   company: string | null;
   position: string | null;
   city: string | null;
+  clubBranch?: string | null;
+  clubCustomer?: string | null;
   age: number | null;
   gender: string | null;
   businessMain: string | null;
   businessExtra1: string | null;
   businessExtra2: string | null;
   businessExtra3: string | null;
-  enrichment: unknown;
+  businessProfile: PauBusinessProfile | null;
+  enrichment: PauEnrichmentProfile | null;
+  bitrixComment?: string | null;
   matchedScore: number | null;
   matchRationale: string | null;
+  attendanceMarked: boolean;
   briefSummary: string | null;
 };
 
@@ -89,6 +130,11 @@ export type PauEvent = {
   latestMatch: {
     activeParticipantCount: number;
     rationale: string | null;
+    createdAt: string;
+  } | null;
+  latestReport: {
+    id: string;
+    summary: string;
     createdAt: string;
   } | null;
   participants: PauEventParticipant[];

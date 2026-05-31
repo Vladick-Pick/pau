@@ -3,6 +3,8 @@ import type { EventMatchProfile } from "@/lib/matching/client";
 export type PreparationParticipantKind = "POTENTIAL" | "ACTIVE";
 export type PreparationBriefType = "POTENTIAL" | "ACTIVE" | "MODERATOR";
 
+export const MAX_REPORT_TRANSCRIPT_CHARS = 80_000;
+
 export type MatchableEvent = {
   id: string;
   title: string;
@@ -30,7 +32,43 @@ export type MatchableParticipant = {
   businessExtra1?: string | null;
   businessExtra2?: string | null;
   businessExtra3?: string | null;
+  businessProfile?: unknown;
   enrichment?: unknown;
+};
+
+export type AttendanceSummaryParticipant = {
+  id: string;
+  kind: PreparationParticipantKind;
+  status?: string | null;
+  attendanceMarked?: boolean | null;
+};
+
+export type AttendanceSummary = {
+  potential: {
+    invited: number;
+    attended: number;
+    conversion: number;
+  };
+  active: {
+    invited: number;
+    attended: number;
+    marked: number;
+    attendedConversion: number;
+    markedConversion: number;
+  };
+};
+
+export type PastEventCandidate = {
+  id: string;
+  startsAt: string | null;
+  status: string;
+};
+
+export type TranscriptReportInput = {
+  eventTitle: string;
+  formatName: string;
+  prompt: string;
+  transcript: string;
 };
 
 export type EventBriefPlanInput = {
@@ -122,14 +160,81 @@ export function selectDefaultExportBriefs<
   return briefs.filter((brief) => brief.briefType === "ACTIVE");
 }
 
+export function computeEventAttendanceSummary(
+  participants: AttendanceSummaryParticipant[]
+): AttendanceSummary {
+  const potential = participants.filter(
+    (participant) => participant.kind === "POTENTIAL"
+  );
+  const active = participants.filter((participant) => participant.kind === "ACTIVE");
+  const potentialInvited = potential.filter(wasInvited).length;
+  const potentialAttended = potential.filter(wasAttended).length;
+  const activeInvited = active.filter(wasInvited).length;
+  const activeAttended = active.filter(wasAttended).length;
+  const activeMarked = active.filter((participant) =>
+    Boolean(participant.attendanceMarked)
+  ).length;
+
+  return {
+    potential: {
+      invited: potentialInvited,
+      attended: potentialAttended,
+      conversion: ratio(potentialAttended, potentialInvited),
+    },
+    active: {
+      invited: activeInvited,
+      attended: activeAttended,
+      marked: activeMarked,
+      attendedConversion: ratio(activeAttended, activeInvited),
+      markedConversion: ratio(activeMarked, activeInvited),
+    },
+  };
+}
+
+export function getLatestPastEvent<Event extends PastEventCandidate>(
+  events: Event[]
+): Event | null {
+  return (
+    events
+      .filter((event) => event.status === "PAST" && event.startsAt)
+      .toSorted(
+        (left, right) =>
+          Date.parse(right.startsAt ?? "") - Date.parse(left.startsAt ?? "")
+      )[0] ?? null
+  );
+}
+
+export function buildTranscriptReportInput(input: {
+  eventTitle: string;
+  formatName: string;
+  promptReport: string;
+  transcript: string;
+}): TranscriptReportInput {
+  return {
+    eventTitle: input.eventTitle,
+    formatName: input.formatName,
+    prompt: input.promptReport,
+    transcript: input.transcript,
+  };
+}
+
 function buildBusinessContext(participant: MatchableParticipant): string[] {
   return [
+    stringifyBusinessProfile(participant.businessProfile),
     participant.businessMain,
     participant.businessExtra1,
     participant.businessExtra2,
     participant.businessExtra3,
     stringifyEnrichment(participant.enrichment),
   ].filter((value): value is string => Boolean(value));
+}
+
+function stringifyBusinessProfile(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 function stringifyInstructions(value: unknown): string | null {
@@ -146,4 +251,16 @@ function stringifyEnrichment(value: unknown): string | null {
   }
 
   return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+function wasInvited(participant: AttendanceSummaryParticipant) {
+  return participant.status !== "UNKNOWN";
+}
+
+function wasAttended(participant: AttendanceSummaryParticipant) {
+  return participant.status === "ATTENDED";
+}
+
+function ratio(numerator: number, denominator: number) {
+  return denominator > 0 ? numerator / denominator : 0;
 }

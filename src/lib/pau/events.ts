@@ -5,6 +5,24 @@ const BITRIX_PERSONAL_MEETING_FIELDS = new Set([
   "UF_CRM_1669784197394",
 ]);
 
+const BITRIX_CONTACT_CHANNEL_FIELDS = new Set([
+  "email",
+  "fm",
+  "im",
+  "phone",
+  "telegram",
+  "ufcrmtelegram",
+]);
+
+const BITRIX_FREE_TEXT_PAYLOAD_FIELDS = new Set([
+  "additionalinfo",
+  "comments",
+  "sourcedescription",
+]);
+
+const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const PHONE_PATTERN = /\+?\d(?:[\s().-]*\d){9,14}/g;
+
 const BITRIX_BUSINESS_FIELDS = {
   main: "UF_CRM_1774269641800",
   extra1: "UF_CRM_1774269653902",
@@ -170,7 +188,7 @@ export function mapBitrixVisitToEventParticipant(input: {
     sourcePayload: sanitizeSourcePayload({
       visit: input.visit,
       deal: input.deal ?? null,
-      contact: input.contact ?? null,
+      contact: null,
     }),
   };
 }
@@ -237,10 +255,35 @@ function extractLinkedId(value: unknown): string | null {
 
 function sanitizeSourcePayload(payload: BitrixRecord): BitrixRecord {
   return JSON.parse(
-    JSON.stringify(payload, (key, value) =>
-      BITRIX_PERSONAL_MEETING_FIELDS.has(key) ? undefined : value
-    )
+    JSON.stringify(payload, (key, value) => {
+      const normalizedKey = normalizePayloadFieldName(key);
+      if (
+        BITRIX_PERSONAL_MEETING_FIELDS.has(key) ||
+        BITRIX_CONTACT_CHANNEL_FIELDS.has(normalizedKey)
+      ) {
+        return undefined;
+      }
+
+      if (
+        typeof value === "string" &&
+        BITRIX_FREE_TEXT_PAYLOAD_FIELDS.has(normalizedKey)
+      ) {
+        return redactFreeTextPayload(value);
+      }
+
+      return value;
+    })
   ) as BitrixRecord;
+}
+
+function redactFreeTextPayload(value: string) {
+  return value
+    .replace(EMAIL_PATTERN, "[redacted-email]")
+    .replace(PHONE_PATTERN, "[redacted-phone]");
+}
+
+function normalizePayloadFieldName(field: string) {
+  return field.replaceAll("_", "").toLowerCase();
 }
 
 function getAny(

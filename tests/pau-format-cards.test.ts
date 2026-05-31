@@ -14,12 +14,13 @@ describe("PAU format cards", () => {
         promptPotential: "Опиши гостя",
         promptActive: "Опиши активного",
         promptModerator: "",
+        promptReport: "Сформируй отчет по расшифровке",
       })
     ).toEqual({
       bitrixLinks: ["guest", "Гостевая встреча", "offline"],
-      completedPrompts: 2,
+      completedPrompts: 3,
       hasMatchingRules: true,
-      totalPrompts: 3,
+      totalPrompts: 4,
     });
   });
 });

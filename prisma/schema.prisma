@@ -22,6 +22,7 @@ enum BriefType {
   POTENTIAL
   ACTIVE
   MODERATOR
+  REPORT
 }
 
 enum SyncStatus {
@@ -85,6 +86,7 @@ model EventFormat {
   promptPotential String   @default("")
   promptActive   String   @default("")
   promptModerator String   @default("")
+  promptReport   String   @default("")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   events         Event[]
@@ -138,9 +140,11 @@ model EventParticipant {
   businessExtra1  String?
   businessExtra2  String?
   businessExtra3  String?
+  businessProfile Json?
   enrichment      Json?
   matchedScore    Float?
   matchRationale  String?
+  attendanceMarked Boolean                @default(false)
   sourcePayload   Json?
   statusUpdatedAt DateTime?
   createdAt       DateTime               @default(now())

@@ -17,6 +17,7 @@ export type BriefInput = {
     businessExtra1?: string | null;
     businessExtra2?: string | null;
     businessExtra3?: string | null;
+    businessProfile?: unknown;
     enrichment?: unknown;
   };
   format?: {
@@ -43,6 +44,20 @@ export type GeneratedBrief = {
   nextSteps: string[];
 };
 
+export type ReportInput = {
+  eventTitle: string;
+  formatName: string;
+  prompt: string;
+  transcript: string;
+};
+
+export type GeneratedReport = {
+  summary: string;
+  keyPoints: string[];
+  decisions: string[];
+  nextSteps: string[];
+};
+
 type OpenRouterOptions = {
   apiKey: string;
   appTitle: string;
@@ -51,10 +66,25 @@ type OpenRouterOptions = {
   fetchImpl?: typeof fetch;
 };
 
+type OpenRouterReportOptions = {
+  apiKey: string;
+  appTitle: string;
+  model: string;
+  input: ReportInput;
+  fetchImpl?: typeof fetch;
+};
+
 const generatedBriefSchema = z.object({
   summary: z.string(),
   talkingPoints: z.array(z.string()),
   risks: z.array(z.string()),
+  nextSteps: z.array(z.string()),
+});
+
+const generatedReportSchema = z.object({
+  summary: z.string(),
+  keyPoints: z.array(z.string()),
+  decisions: z.array(z.string()),
   nextSteps: z.array(z.string()),
 });
 
@@ -86,6 +116,27 @@ const briefJsonSchema = {
     },
   },
   required: ["summary", "talkingPoints", "risks", "nextSteps"],
+  additionalProperties: false,
+} as const;
+
+const reportJsonSchema = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    keyPoints: {
+      type: "array",
+      items: { type: "string" },
+    },
+    decisions: {
+      type: "array",
+      items: { type: "string" },
+    },
+    nextSteps: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
+  required: ["summary", "keyPoints", "decisions", "nextSteps"],
   additionalProperties: false,
 } as const;
 
@@ -134,6 +185,51 @@ export async function generateBriefWithOpenRouter(
   return generatedBriefSchema.parse(JSON.parse(content));
 }
 
+export async function generateReportWithOpenRouter(
+  options: OpenRouterReportOptions
+): Promise<GeneratedReport> {
+  const fetcher = options.fetchImpl ?? fetch;
+  const response = await fetcher(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${options.apiKey}`,
+        "Content-Type": "application/json",
+        "X-OpenRouter-Title": options.appTitle,
+      },
+      body: JSON.stringify({
+        model: options.model,
+        messages: buildReportMessages(options.input),
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "pau_event_report",
+            strict: true,
+            schema: reportJsonSchema,
+          },
+        },
+        stream: false,
+        temperature: 0.2,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `OpenRouter API failed with ${response.status} ${response.statusText}`
+    );
+  }
+
+  const payload = openRouterResponseSchema.parse(await response.json());
+  const content = payload.choices[0]?.message.content;
+  if (!content) {
+    throw new Error("OpenRouter API returned an empty report response");
+  }
+
+  return generatedReportSchema.parse(JSON.parse(content));
+}
+
 function buildBriefMessages(input: BriefInput) {
   return [
     {
@@ -150,6 +246,26 @@ function buildBriefMessages(input: BriefInput) {
         format: input.format,
         match: input.match,
         attendanceHistory: input.attendanceHistory,
+      }),
+    },
+  ];
+}
+
+function buildReportMessages(input: ReportInput) {
+  return [
+    {
+      role: "system" as const,
+      content:
+        "Ты готовишь операционный отчет по встрече программы активных участников. Пиши по-русски, конкретно, фиксируй решения и следующие шаги.",
+    },
+    {
+      role: "user" as const,
+      content: JSON.stringify({
+        task: "EVENT_REPORT",
+        prompt: input.prompt,
+        eventTitle: input.eventTitle,
+        formatName: input.formatName,
+        transcript: input.transcript,
       }),
     },
   ];

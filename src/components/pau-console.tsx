@@ -6,6 +6,8 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeftIcon,
   CalendarDaysIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   CheckCircle2Icon,
   CircleUserRoundIcon,
   DownloadIcon,
@@ -19,6 +21,7 @@ import {
   RefreshCwIcon,
   Settings2Icon,
   SparklesIcon,
+  Trash2Icon,
   UsersIcon,
   XCircleIcon,
 } from "lucide-react";
@@ -79,6 +82,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { SessionRole } from "@/lib/auth/session";
 import type {
+  PauBusinessBlock,
   PauEvent,
   PauEventParticipant,
   PauFormat,
@@ -86,6 +90,15 @@ import type {
   PauWorkspaceSnapshot,
 } from "@/lib/pau/types";
 import { summarizeFormatCard } from "@/lib/pau/format-cards";
+import {
+  MAX_REPORT_TRANSCRIPT_CHARS,
+  computeEventAttendanceSummary,
+  getLatestPastEvent,
+} from "@/lib/pau/preparation";
+import {
+  selectEventInScope,
+  selectParticipantById,
+} from "@/lib/pau/participant-selection";
 import { cn } from "@/lib/utils";
 
 type PauConsoleProps = {
@@ -108,6 +121,8 @@ type FormatDraft = Omit<PauFormat, "bitrixEventTypeIds" | "matchingRules"> & {
   matchingRulesText: string;
 };
 
+const MAX_REPORT_TRANSCRIPT_FILE_BYTES = MAX_REPORT_TRANSCRIPT_CHARS * 4;
+
 const mainNavigation: Array<{
   id: Exclude<SectionId, "access">;
   label: string;
@@ -129,13 +144,14 @@ export function PauConsole({
   const [selectedEventId, setSelectedEventId] = useState(
     initialData.upcomingEvents[0]?.id ?? initialData.pastEvents[0]?.id ?? null
   );
-  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(
-    initialData.upcomingEvents[0]?.participants[0]?.id ?? null
-  );
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
   const [formatDrafts, setFormatDrafts] = useState(() =>
     initialData.formats.map(toFormatDraft)
   );
   const [editingFormatSlug, setEditingFormatSlug] = useState<string | null>(null);
+  const [expandedHistoryEventIds, setExpandedHistoryEventIds] = useState<Set<string>>(
+    () => new Set(initialData.pastEvents[0]?.id ? [initialData.pastEvents[0].id] : [])
+  );
   const [newUserRole, setNewUserRole] = useState<SessionRole>("VIEWER");
   const [notice, setNotice] = useState<ActionNotice>(null);
   const [isPending, startTransition] = useTransition();
@@ -151,12 +167,20 @@ export function PauConsole({
     data.upcomingEvents[0] ??
     data.pastEvents[0] ??
     null;
-  const selectedParticipant =
-    selectedEvent?.participants.find(
-      (participant) => participant.id === selectedParticipantId
-    ) ??
-    selectedEvent?.participants[0] ??
-    null;
+  const selectedParticipant = selectedEvent
+    ? selectParticipantById(selectedEvent.participants, selectedParticipantId)
+    : null;
+  const latestPastEvent = useMemo(
+    () => getLatestPastEvent(data.pastEvents),
+    [data.pastEvents]
+  );
+  const selectedHistoryEvent = useMemo(
+    () => selectEventInScope(data.pastEvents, selectedEventId),
+    [data.pastEvents, selectedEventId]
+  );
+  const selectedHistoryParticipant = selectedHistoryEvent
+    ? selectParticipantById(selectedHistoryEvent.participants, selectedParticipantId)
+    : null;
 
   const refreshWorkspace = useCallback(async (options = { syncFormatDrafts: true }) => {
     const response = await fetch("/api/dashboard", { cache: "no-store" });
@@ -244,6 +268,53 @@ export function PauConsole({
     });
   }
 
+  function generateReport(eventId: string, transcript: string) {
+    runAction(async () => {
+      const response = await fetch(`/api/events/${eventId}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.error ?? "Report generation failed");
+      }
+
+      return {
+        tone: "default",
+        title: "Отчет сформирован",
+        message: body.report?.summary ?? "Отчет сохранен в истории брифов.",
+      };
+    });
+  }
+
+  function markParticipantAttendance(
+    eventId: string,
+    participantId: string,
+    attendanceMarked: boolean
+  ) {
+    runAction(async () => {
+      const response = await fetch(
+        `/api/events/${eventId}/participants/${participantId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ attendanceMarked }),
+        }
+      );
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.error ?? "Participant update failed");
+      }
+
+      return {
+        tone: "default",
+        title: "Посещение обновлено",
+        message: body.participant?.fullName ?? "Отметка сохранена.",
+      };
+    });
+  }
+
   function saveFormats() {
     runAction(async () => {
       const response = await fetch("/api/formats", {
@@ -262,6 +333,41 @@ export function PauConsole({
         title: "Форматы сохранены",
         message: `Обновлено форматов: ${body.formats?.length ?? 0}.`,
       };
+    });
+  }
+
+  function deleteFormatAction(slug: string) {
+    if (!window.confirm(`Удалить формат ${slug}?`)) {
+      return;
+    }
+
+    runAction(async () => {
+      const response = await fetch(`/api/formats/${slug}`, {
+        method: "DELETE",
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.error ?? "Format deletion failed");
+      }
+      setEditingFormatSlug(null);
+
+      return {
+        tone: "default",
+        title: "Формат удален",
+        message: body.format?.name ?? slug,
+      };
+    });
+  }
+
+  function toggleHistoryEvent(eventId: string) {
+    setExpandedHistoryEventIds((current) => {
+      const next = new Set(current);
+      if (next.has(eventId)) {
+        next.delete(eventId);
+      } else {
+        next.add(eventId);
+      }
+      return next;
     });
   }
 
@@ -434,18 +540,18 @@ export function PauConsole({
               canManage={canManage}
               data={data}
               isPending={isPending}
+              latestPastEvent={latestPastEvent}
+              onAttendanceMark={markParticipantAttendance}
               onBriefs={generateBriefs}
               onExport={(eventId) => {
                 window.location.href = `/api/events/${eventId}/export`;
               }}
               onMatch={matchEvent}
               onParticipantSelect={setSelectedParticipantId}
+              onReport={generateReport}
               onSelectEvent={(eventId) => {
                 setSelectedEventId(eventId);
-                const event = [...data.upcomingEvents, ...data.pastEvents].find(
-                  (candidate) => candidate.id === eventId
-                );
-                setSelectedParticipantId(event?.participants[0]?.id ?? null);
+                setSelectedParticipantId(null);
               }}
               selectedEvent={selectedEvent}
               selectedEventId={selectedEventId}
@@ -461,6 +567,7 @@ export function PauConsole({
               isPending={isPending}
               onBack={() => setEditingFormatSlug(null)}
               onChange={updateFormatDraft}
+              onDelete={deleteFormatAction}
               onEdit={setEditingFormatSlug}
               onSave={saveFormats}
             />
@@ -468,12 +575,26 @@ export function PauConsole({
 
           {activeSection === "history" ? (
             <HistoryView
+              canManage={canManage}
+              databaseEnabled={!data.demoMode}
               events={data.pastEvents}
+              expandedEventIds={expandedHistoryEventIds}
+              integrations={data.integrationStatus}
+              isPending={isPending}
+              onAttendanceMark={markParticipantAttendance}
+              onExport={(eventId) => {
+                window.location.href = `/api/events/${eventId}/export`;
+              }}
               onParticipantSelect={setSelectedParticipantId}
-              onSelectEvent={setSelectedEventId}
-              selectedEvent={selectedEvent}
-              selectedEventId={selectedEventId}
-              selectedParticipant={selectedParticipant}
+              onReport={generateReport}
+              onSelectEvent={(eventId) => {
+                setSelectedEventId(eventId);
+                setSelectedParticipantId(null);
+              }}
+              onToggleExpanded={toggleHistoryEvent}
+              selectedEvent={selectedHistoryEvent}
+              selectedEventId={selectedHistoryEvent?.id ?? null}
+              selectedParticipant={selectedHistoryParticipant}
             />
           ) : null}
 
@@ -498,10 +619,13 @@ function PreparationView({
   canManage,
   data,
   isPending,
+  latestPastEvent,
+  onAttendanceMark,
   onBriefs,
   onExport,
   onMatch,
   onParticipantSelect,
+  onReport,
   onSelectEvent,
   selectedEvent,
   selectedEventId,
@@ -510,10 +634,17 @@ function PreparationView({
   canManage: boolean;
   data: PauWorkspaceSnapshot;
   isPending: boolean;
+  latestPastEvent: PauEvent | null;
+  onAttendanceMark: (
+    eventId: string,
+    participantId: string,
+    attendanceMarked: boolean
+  ) => void;
   onBriefs: (eventId: string) => void;
   onExport: (eventId: string) => void;
   onMatch: (eventId: string) => void;
   onParticipantSelect: (participantId: string) => void;
+  onReport: (eventId: string, transcript: string) => void;
   onSelectEvent: (eventId: string) => void;
   selectedEvent: PauEvent | null;
   selectedEventId: string | null;
@@ -570,30 +701,276 @@ function PreparationView({
             </EmptyHeader>
           </Empty>
         )}
+        {latestPastEvent ? (
+          <div className="mt-3 flex flex-col gap-2">
+            <div>
+              <h2 className="text-sm font-medium">Последнее событие</h2>
+              <p className="text-xs text-muted-foreground">
+                Быстрый доступ к фактическому составу и отчету
+              </p>
+            </div>
+            <button
+              className={cn(
+                "rounded-md border bg-card p-3 text-left text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+                selectedEventId === latestPastEvent.id && "border-ring bg-accent"
+              )}
+              onClick={() => onSelectEvent(latestPastEvent.id)}
+              type="button"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {latestPastEvent.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatDate(latestPastEvent.startsAt)} · {latestPastEvent.formatName}
+                  </p>
+                </div>
+                <Badge variant="outline">{latestPastEvent.counts.attended}</Badge>
+              </div>
+              <EventConversionStrip event={latestPastEvent} />
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {selectedEvent ? (
-        <section className="flex min-w-0 flex-col gap-5">
-          <EventHeader
-            canManage={canManage}
-            databaseEnabled={!data.demoMode}
-            event={selectedEvent}
-            integrations={data.integrationStatus}
-            isPending={isPending}
-            onBriefs={onBriefs}
-            onExport={onExport}
-            onMatch={onMatch}
-          />
-          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
-            <ParticipantsTable
-              onParticipantSelect={onParticipantSelect}
-              participants={selectedEvent.participants}
-              selectedParticipantId={selectedParticipant?.id ?? null}
-            />
-            <ParticipantDetails participant={selectedParticipant} />
-          </div>
-        </section>
+        <EventWorkspace
+          canManage={canManage}
+          databaseEnabled={!data.demoMode}
+          event={selectedEvent}
+          integrations={data.integrationStatus}
+          isPending={isPending}
+          onAttendanceMark={onAttendanceMark}
+          onBriefs={onBriefs}
+          onExport={onExport}
+          onMatch={onMatch}
+          onParticipantSelect={onParticipantSelect}
+          onReport={onReport}
+          selectedParticipant={selectedParticipant}
+        />
       ) : null}
+    </div>
+  );
+}
+
+function EventWorkspace({
+  canManage,
+  databaseEnabled,
+  event,
+  integrations,
+  isPending,
+  onAttendanceMark,
+  onBriefs,
+  onExport,
+  onMatch,
+  onParticipantSelect,
+  onReport,
+  selectedParticipant,
+}: {
+  canManage: boolean;
+  databaseEnabled: boolean;
+  event: PauEvent;
+  integrations: PauWorkspaceSnapshot["integrationStatus"];
+  isPending: boolean;
+  onAttendanceMark: (
+    eventId: string,
+    participantId: string,
+    attendanceMarked: boolean
+  ) => void;
+  onBriefs: (eventId: string) => void;
+  onExport: (eventId: string) => void;
+  onMatch: (eventId: string) => void;
+  onParticipantSelect: (participantId: string) => void;
+  onReport: (eventId: string, transcript: string) => void;
+  selectedParticipant: PauEventParticipant | null;
+}) {
+  const canRunPreparationActions = canManage && event.status !== "PAST";
+  const canMarkAttendance = canManage && event.status === "PAST";
+
+  return (
+    <section className="flex min-w-0 flex-col gap-5">
+      <EventHeader
+        canManage={canRunPreparationActions}
+        databaseEnabled={databaseEnabled}
+        event={event}
+        integrations={integrations}
+        isPending={isPending}
+        onBriefs={onBriefs}
+        onExport={onExport}
+        onMatch={onMatch}
+      />
+      <AttendanceSummaryPanel event={event} />
+      {event.status === "PAST" ? (
+        <EventReportPanel
+          canManage={canManage}
+          databaseEnabled={databaseEnabled}
+          event={event}
+          integrations={integrations}
+          isPending={isPending}
+          key={event.id}
+          onReport={onReport}
+        />
+      ) : null}
+      <div
+        className={cn(
+          "grid gap-5",
+          selectedParticipant && "2xl:grid-cols-[minmax(0,1fr)_360px]"
+        )}
+      >
+        <ParticipantsTable
+          canMarkAttendance={canMarkAttendance}
+          databaseEnabled={databaseEnabled}
+          eventId={event.id}
+          isPending={isPending}
+          onAttendanceMark={onAttendanceMark}
+          onParticipantSelect={onParticipantSelect}
+          participants={event.participants}
+          selectedParticipantId={selectedParticipant?.id ?? null}
+        />
+        {selectedParticipant ? (
+          <ParticipantDetails participant={selectedParticipant} />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function AttendanceSummaryPanel({ event }: { event: PauEvent }) {
+  const summary = computeEventAttendanceSummary(event.participants);
+
+  return (
+    <div className="grid gap-2 md:grid-cols-2">
+      <div className="rounded-md border bg-card p-3 text-card-foreground">
+        <p className="text-xs font-medium uppercase text-muted-foreground">
+          Потенциалы
+        </p>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          <Count label="Звали" value={summary.potential.invited} />
+          <Count label="Дошли" value={summary.potential.attended} />
+          <Count label="Конв." value={formatPercent(summary.potential.conversion)} />
+        </div>
+      </div>
+      <div className="rounded-md border bg-card p-3 text-card-foreground">
+        <p className="text-xs font-medium uppercase text-muted-foreground">
+          Активные участники
+        </p>
+        <div className="mt-2 grid grid-cols-4 gap-2">
+          <Count label="Звали" value={summary.active.invited} />
+          <Count label="Дошли" value={summary.active.attended} />
+          <Count label="Был факт" value={summary.active.marked} />
+          <Count label="Факт" value={formatPercent(summary.active.markedConversion)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventReportPanel({
+  canManage,
+  databaseEnabled,
+  event,
+  integrations,
+  isPending,
+  onReport,
+}: {
+  canManage: boolean;
+  databaseEnabled: boolean;
+  event: PauEvent;
+  integrations: PauWorkspaceSnapshot["integrationStatus"];
+  isPending: boolean;
+  onReport: (eventId: string, transcript: string) => void;
+}) {
+  const [transcript, setTranscript] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+
+  function updateTranscript(nextTranscript: string) {
+    setTranscript(nextTranscript);
+    setTranscriptError(
+      nextTranscript.length > MAX_REPORT_TRANSCRIPT_CHARS
+        ? `Transcript длиннее лимита ${formatInteger(MAX_REPORT_TRANSCRIPT_CHARS)} символов.`
+        : null
+    );
+  }
+
+  async function readTranscriptFile(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    setFileName(file.name);
+    if (file.size > MAX_REPORT_TRANSCRIPT_FILE_BYTES) {
+      setTranscript("");
+      setTranscriptError(
+        `Файл больше лимита ${formatInteger(MAX_REPORT_TRANSCRIPT_FILE_BYTES)} байт.`
+      );
+      return;
+    }
+
+    updateTranscript(await file.text());
+  }
+
+  const canGenerate =
+    canManage &&
+    databaseEnabled &&
+    integrations.openrouter &&
+    !isPending &&
+    !transcriptError &&
+    transcript.trim().length > 0;
+
+  return (
+    <div className="grid gap-3 rounded-md border bg-card p-4 text-card-foreground lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="flex min-w-0 flex-col gap-3">
+        <div>
+          <h3 className="text-sm font-medium">Отчет по transcript</h3>
+          <p className="text-xs text-muted-foreground">
+            Prompt берется из настроек формата.
+          </p>
+        </div>
+        <Textarea
+          disabled={!canManage || !databaseEnabled}
+          onChange={(changeEvent) => updateTranscript(changeEvent.target.value)}
+          placeholder="Вставьте текст записи встречи"
+          value={transcript}
+        />
+        {transcriptError ? (
+          <p className="text-xs text-destructive">{transcriptError}</p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            accept=".txt,.md,text/plain"
+            className="max-w-sm"
+            disabled={!canManage || !databaseEnabled}
+            onChange={(changeEvent) =>
+              void readTranscriptFile(changeEvent.target.files?.[0])
+            }
+            type="file"
+          />
+          {fileName ? (
+            <span className="text-xs text-muted-foreground">{fileName}</span>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-background p-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase text-muted-foreground">
+            Последний отчет
+          </p>
+          <p className="mt-2 text-sm">
+            {event.latestReport?.summary ?? "Отчет еще не сформирован"}
+          </p>
+          {event.latestReport ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {formatDate(event.latestReport.createdAt)}
+            </p>
+          ) : null}
+        </div>
+        <Button disabled={!canGenerate} onClick={() => onReport(event.id, transcript)}>
+          <FileTextIcon data-icon="inline-start" />
+          Сформировать
+        </Button>
+      </div>
     </div>
   );
 }
@@ -737,10 +1114,24 @@ function EventHeader({
 }
 
 function ParticipantsTable({
+  canMarkAttendance,
+  databaseEnabled,
+  eventId,
+  isPending,
+  onAttendanceMark,
   onParticipantSelect,
   participants,
   selectedParticipantId,
 }: {
+  canMarkAttendance: boolean;
+  databaseEnabled: boolean;
+  eventId: string;
+  isPending: boolean;
+  onAttendanceMark: (
+    eventId: string,
+    participantId: string,
+    attendanceMarked: boolean
+  ) => void;
   onParticipantSelect: (participantId: string) => void;
   participants: PauEventParticipant[];
   selectedParticipantId: string | null;
@@ -753,6 +1144,7 @@ function ParticipantsTable({
             <TableHead>Участник</TableHead>
             <TableHead>Бизнес</TableHead>
             <TableHead>Статус</TableHead>
+            <TableHead>Факт</TableHead>
             <TableHead>Сделка</TableHead>
           </TableRow>
         </TableHeader>
@@ -786,6 +1178,32 @@ function ParticipantsTable({
                 </div>
               </TableCell>
               <TableCell>
+                {participant.kind === "ACTIVE" ? (
+                  <label
+                    className="flex w-fit items-center gap-2 text-xs"
+                    onClick={(clickEvent) => clickEvent.stopPropagation()}
+                  >
+                    <input
+                      aria-label={`Отметить фактическое участие: ${participant.fullName}`}
+                      checked={participant.attendanceMarked}
+                      className="size-4 accent-primary"
+                      disabled={!canMarkAttendance || !databaseEnabled || isPending}
+                      onChange={(changeEvent) =>
+                        onAttendanceMark(
+                          eventId,
+                          participant.id,
+                          changeEvent.target.checked
+                        )
+                      }
+                      type="checkbox"
+                    />
+                    Был
+                  </label>
+                ) : (
+                  <span className="text-sm text-muted-foreground">-</span>
+                )}
+              </TableCell>
+              <TableCell>
                 <span className="text-sm text-muted-foreground">
                   {participant.bitrixDealId ?? "нет"}
                 </span>
@@ -801,19 +1219,8 @@ function ParticipantsTable({
 function ParticipantDetails({
   participant,
 }: {
-  participant: PauEventParticipant | null;
+  participant: PauEventParticipant;
 }) {
-  if (!participant) {
-    return (
-      <Empty className="rounded-md border">
-        <EmptyHeader>
-          <EmptyTitle>Сделка не выбрана</EmptyTitle>
-          <EmptyDescription>Выберите участника из списка.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-
   return (
     <aside className="flex flex-col gap-4 rounded-md border bg-card p-4 text-card-foreground">
       <div className="flex items-start justify-between gap-3">
@@ -826,17 +1233,41 @@ function ParticipantDetails({
         <KindBadge kind={participant.kind} />
       </div>
       <Separator />
-      <Detail label="Контакт" value={[participant.phone, participant.email, participant.telegram].filter(Boolean).join(" · ")} />
       <Detail label="Должность" value={participant.position} />
       <Detail label="Город" value={participant.city} />
+      <Detail label="Филиал клуба" value={participant.clubBranch} />
+      <Detail label="Заказчик куда поставляем" value={participant.clubCustomer} />
       <Detail label="Возраст / пол" value={[participant.age, participant.gender].filter(Boolean).join(" · ")} />
       <Separator />
-      <Detail label="Основной бизнес" value={participant.businessMain} />
-      <Detail label="Доп бизнес 1" value={participant.businessExtra1} />
-      <Detail label="Доп бизнес 2" value={participant.businessExtra2} />
-      <Detail label="Доп бизнес 3" value={participant.businessExtra3} />
-      <Detail label="Обогащение" value={formatUnknown(participant.enrichment)} />
+      <BusinessBlockDetails
+        block={participant.businessProfile?.main ?? null}
+        fallbackSphere={participant.businessMain}
+        title="Основной бизнес"
+      />
+      <BusinessBlockDetails
+        block={participant.businessProfile?.extra1 ?? null}
+        fallbackSphere={participant.businessExtra1}
+        title="Доп бизнес 1"
+      />
+      <BusinessBlockDetails
+        block={participant.businessProfile?.extra2 ?? null}
+        fallbackSphere={participant.businessExtra2}
+        title="Доп бизнес 2"
+      />
+      <BusinessBlockDetails
+        block={participant.businessProfile?.extra3 ?? null}
+        fallbackSphere={participant.businessExtra3}
+        title="Доп бизнес 3"
+      />
+      <KeyValueDetails
+        emptyText="Не заполнено"
+        items={participant.enrichment}
+        labels={enrichmentLabels}
+        showEmptyRows
+        title="Обогащение"
+      />
       <Separator />
+      <LongDetail label="Комментарий Bitrix" value={participant.bitrixComment} />
       <Detail label="Score" value={participant.matchedScore?.toFixed(2)} />
       <Detail label="Rationale" value={participant.matchRationale} />
       <Detail label="Бриф" value={participant.briefSummary} />
@@ -851,6 +1282,7 @@ function FormatsView({
   isPending,
   onBack,
   onChange,
+  onDelete,
   onEdit,
   onSave,
 }: {
@@ -860,6 +1292,7 @@ function FormatsView({
   isPending: boolean;
   onBack: () => void;
   onChange: (slug: string, patch: Partial<FormatDraft>) => void;
+  onDelete: (slug: string) => void;
   onEdit: (slug: string) => void;
   onSave: () => void;
 }) {
@@ -1030,6 +1463,21 @@ function FormatsView({
                   value={editingFormat.promptModerator}
                 />
               </Field>
+              <Field>
+                <FieldLabel htmlFor={`${editingFormat.slug}-report`}>
+                  Prompt: отчет по transcript
+                </FieldLabel>
+                <Textarea
+                  disabled={!canManage}
+                  id={`${editingFormat.slug}-report`}
+                  onChange={(event) =>
+                    onChange(editingFormat.slug, {
+                      promptReport: event.target.value,
+                    })
+                  }
+                  value={editingFormat.promptReport}
+                />
+              </Field>
             </FieldGroup>
           </CardContent>
         </Card>
@@ -1055,6 +1503,7 @@ function FormatsView({
             format={format}
             isPending={isPending}
             key={format.slug}
+            onDelete={onDelete}
             onEdit={onEdit}
           />
         ))}
@@ -1067,11 +1516,13 @@ function FormatSummaryCard({
   canManage,
   format,
   isPending,
+  onDelete,
   onEdit,
 }: {
   canManage: boolean;
   format: FormatDraft;
   isPending: boolean;
+  onDelete: (slug: string) => void;
   onEdit: (slug: string) => void;
 }) {
   const summary = summarizeFormatCard(format);
@@ -1084,16 +1535,28 @@ function FormatSummaryCard({
         <CardTitle>{format.name}</CardTitle>
         <CardDescription>{format.slug}</CardDescription>
         <CardAction>
-          <Button
-            disabled={isPending || !canManage}
-            onClick={() => onEdit(format.slug)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <PencilIcon data-icon="inline-start" />
-            Редактировать
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              disabled={isPending || !canManage}
+              onClick={() => onEdit(format.slug)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <PencilIcon data-icon="inline-start" />
+              Редактировать
+            </Button>
+            <Button
+              aria-label={`Удалить формат ${format.name}`}
+              disabled={isPending || !canManage}
+              onClick={() => onDelete(format.slug)}
+              size="icon-sm"
+              type="button"
+              variant="outline"
+            >
+              <Trash2Icon />
+            </Button>
+          </div>
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-4">
@@ -1138,17 +1601,99 @@ function FormatSummaryCard({
   );
 }
 
+function EventConversionStrip({ event }: { event: PauEvent }) {
+  const summary = computeEventAttendanceSummary(event.participants);
+
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div className="rounded-md border bg-background p-2">
+        <p className="text-[11px] text-muted-foreground">Потенциалы</p>
+        <p className="font-medium">
+          {summary.potential.invited}
+          {" -> "}
+          {summary.potential.attended} ·{" "}
+          {formatPercent(summary.potential.conversion)}
+        </p>
+      </div>
+      <div className="rounded-md border bg-background p-2">
+        <p className="text-[11px] text-muted-foreground">Активные</p>
+        <p className="font-medium">
+          {summary.active.invited}
+          {" -> "}
+          {summary.active.attended}
+          {" -> "}
+          {summary.active.marked} · {formatPercent(summary.active.markedConversion)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function CompactParticipantsStatus({
+  participants,
+}: {
+  participants: PauEventParticipant[];
+}) {
+  const visibleParticipants = participants.slice(0, 8);
+  const hiddenCount = participants.length - visibleParticipants.length;
+
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      {visibleParticipants.map((participant) => (
+        <div
+          className="flex items-center justify-between gap-3 text-xs"
+          key={participant.id}
+        >
+          <span className="min-w-0 truncate">{participant.fullName}</span>
+          <div className="flex shrink-0 items-center gap-1">
+            <KindBadge kind={participant.kind} />
+            <ParticipantStatusBadge status={participant.status} />
+            {participant.kind === "ACTIVE" && participant.attendanceMarked ? (
+              <Badge variant="secondary">был факт</Badge>
+            ) : null}
+          </div>
+        </div>
+      ))}
+      {hiddenCount > 0 ? (
+        <p className="text-xs text-muted-foreground">Еще {hiddenCount}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function HistoryView({
+  canManage,
+  databaseEnabled,
   events,
+  expandedEventIds,
+  integrations,
+  isPending,
+  onAttendanceMark,
+  onExport,
   onParticipantSelect,
+  onReport,
   onSelectEvent,
+  onToggleExpanded,
   selectedEvent,
   selectedEventId,
   selectedParticipant,
 }: {
+  canManage: boolean;
+  databaseEnabled: boolean;
   events: PauEvent[];
+  expandedEventIds: Set<string>;
+  integrations: PauWorkspaceSnapshot["integrationStatus"];
+  isPending: boolean;
+  onAttendanceMark: (
+    eventId: string,
+    participantId: string,
+    attendanceMarked: boolean
+  ) => void;
+  onExport: (eventId: string) => void;
   onParticipantSelect: (participantId: string) => void;
+  onReport: (eventId: string, transcript: string) => void;
   onSelectEvent: (eventId: string) => void;
+  onToggleExpanded: (eventId: string) => void;
   selectedEvent: PauEvent | null;
   selectedEventId: string | null;
   selectedParticipant: PauEventParticipant | null;
@@ -1158,26 +1703,55 @@ function HistoryView({
       <section className="flex flex-col gap-2">
         {events.length > 0 ? (
           events.map((event) => (
-            <button
+            <article
               className={cn(
-                "rounded-md border bg-card p-3 text-left transition-colors hover:bg-accent hover:text-accent-foreground",
+                "rounded-md border bg-card p-3 text-card-foreground transition-colors",
                 selectedEventId === event.id && "border-ring bg-accent"
               )}
               key={event.id}
-              onClick={() => onSelectEvent(event.id)}
-              type="button"
             >
-              <p className="truncate text-sm font-medium">{event.title}</p>
-              <p className="text-xs text-muted-foreground">
-                {formatDate(event.startsAt)} · дошли {event.counts.attended}
-              </p>
+              <div className="flex items-start gap-2">
+                <button
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => onSelectEvent(event.id)}
+                  type="button"
+                >
+                  <p className="truncate text-sm font-medium">{event.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatDate(event.startsAt)} · дошли {event.counts.attended}
+                  </p>
+                </button>
+                <Button
+                  aria-label={
+                    expandedEventIds.has(event.id)
+                      ? "Свернуть событие"
+                      : "Развернуть событие"
+                  }
+                  onClick={() => onToggleExpanded(event.id)}
+                  size="icon-sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  {expandedEventIds.has(event.id) ? (
+                    <ChevronDownIcon />
+                  ) : (
+                    <ChevronRightIcon />
+                  )}
+                </Button>
+              </div>
               <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
                 <Count label="Звали" value={event.counts.invited} />
                 <Count label="Да" value={event.counts.confirmed} />
                 <Count label="Нет" value={event.counts.refused} />
                 <Count label="No-show" value={event.counts.missed} />
               </div>
-            </button>
+              {expandedEventIds.has(event.id) ? (
+                <div className="mt-3 border-t pt-3">
+                  <EventConversionStrip event={event} />
+                  <CompactParticipantsStatus participants={event.participants} />
+                </div>
+              ) : null}
+            </article>
           ))
         ) : (
           <Empty>
@@ -1189,31 +1763,20 @@ function HistoryView({
         )}
       </section>
       {selectedEvent ? (
-        <section className="flex min-w-0 flex-col gap-5">
-          <EventHeader
-            canManage={false}
-            databaseEnabled={false}
-            event={selectedEvent}
-            integrations={{
-              database: false,
-              bitrix: false,
-              matching: false,
-              openrouter: false,
-            }}
-            isPending={false}
-            onBriefs={() => undefined}
-            onExport={() => undefined}
-            onMatch={() => undefined}
-          />
-          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
-            <ParticipantsTable
-              onParticipantSelect={onParticipantSelect}
-              participants={selectedEvent.participants}
-              selectedParticipantId={selectedParticipant?.id ?? null}
-            />
-            <ParticipantDetails participant={selectedParticipant} />
-          </div>
-        </section>
+        <EventWorkspace
+          canManage={canManage}
+          databaseEnabled={databaseEnabled}
+          event={selectedEvent}
+          integrations={integrations}
+          isPending={isPending}
+          onAttendanceMark={onAttendanceMark}
+          onBriefs={() => undefined}
+          onExport={onExport}
+          onMatch={() => undefined}
+          onParticipantSelect={onParticipantSelect}
+          onReport={onReport}
+          selectedParticipant={selectedParticipant}
+        />
       ) : null}
     </div>
   );
@@ -1334,7 +1897,7 @@ function AccessView({
   );
 }
 
-function Count({ label, value }: { label: string; value: number }) {
+function Count({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-md border bg-background p-2">
       <p className="text-[11px] text-muted-foreground">{label}</p>
@@ -1352,6 +1915,142 @@ function Detail({ label, value }: { label: string; value?: string | null }) {
       <span className="text-sm">{value || "Не заполнено"}</span>
     </div>
   );
+}
+
+function LongDetail({ label, value }: { label: string; value?: string | null }) {
+  if (!value) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] font-medium uppercase text-muted-foreground">
+        {label}
+      </span>
+      <p className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border bg-background p-2 text-sm leading-6">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+const businessBlockLabels: Record<keyof PauBusinessBlock, string> = {
+  sphere: "Сфера деятельности",
+  specifics: "Специфика компании",
+  role: "Роль / должность",
+  experience: "Опыт в должности",
+  okved: "ОКВЭД",
+  sharePercent: "Доля в компании",
+  revenue: "Оборот бизнеса",
+  rusprofileUrl: "Rusprofile",
+  siteUrl: "Сайт компании",
+};
+
+const enrichmentLabels: Record<string, string> = {
+  keyProjects: "Ключевые проекты",
+  clubConnections: "Связи внутри клуба",
+  wasInCommunity: "Состоял ли в сообществе",
+  previousCommunities: "Предыдущие сообщества",
+  clubGoals: "Цели/задачи по клубу",
+  hobbies: "Увлечения/хобби",
+  personalIncome: "Личный доход",
+  mentionsLinks: "Упоминания в сети",
+  additionalInfo: "Дополнительная информация",
+  familyKids: "Семья/дети",
+  newProjects: "Новые проекты",
+  usefulForClub: "Чем полезен клубу",
+};
+
+function BusinessBlockDetails({
+  block,
+  fallbackSphere,
+  title,
+}: {
+  block: PauBusinessBlock | null;
+  fallbackSphere?: string | null;
+  title: string;
+}) {
+  const resolvedBlock = block ?? (fallbackSphere ? { sphere: fallbackSphere } : null);
+  return (
+    <KeyValueDetails
+      emptyText="Не заполнено"
+      items={resolvedBlock}
+      labels={businessBlockLabels}
+      showEmptyRows={Boolean(resolvedBlock)}
+      title={title}
+    />
+  );
+}
+
+function KeyValueDetails({
+  emptyText,
+  items,
+  labels,
+  showEmptyRows = false,
+  title,
+}: {
+  emptyText: string;
+  items?: Record<string, unknown> | null;
+  labels: Record<string, string>;
+  showEmptyRows?: boolean;
+  title: string;
+}) {
+  const rows = Object.entries(labels).flatMap(([key, label]) => {
+    const value = formatDetailValue(items?.[key]);
+    if (value) {
+      return [{ key, label, value, isEmpty: false }];
+    }
+
+    return showEmptyRows ? [{ key, label, value: emptyText, isEmpty: true }] : [];
+  });
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-medium uppercase text-muted-foreground">
+        {title}
+      </span>
+      {rows.length > 0 ? (
+        <dl className="grid gap-1.5 text-sm">
+          {rows.map((row) => (
+            <div className="grid gap-0.5" key={row.key}>
+              <dt className="text-[11px] text-muted-foreground">{row.label}</dt>
+              <dd
+                className={cn(
+                  "break-words",
+                  row.isEmpty && "text-muted-foreground"
+                )}
+              >
+                {row.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <span className="text-sm">{emptyText}</span>
+      )}
+    </div>
+  );
+}
+
+function formatDetailValue(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    const text = value
+      .map((item) => formatDetailValue(item))
+      .filter(Boolean)
+      .join(", ");
+    return text || null;
+  }
+
+  if (typeof value === "object") {
+    return null;
+  }
+
+  const text = String(value).trim();
+  return text || null;
 }
 
 function IntegrationBadge({ label, ready }: { label: string; ready: boolean }) {
@@ -1455,6 +2154,7 @@ function formatDraftToPatch(format: FormatDraft) {
     promptPotential: format.promptPotential,
     promptActive: format.promptActive,
     promptModerator: format.promptModerator,
+    promptReport: format.promptReport,
   };
 }
 
@@ -1484,12 +2184,12 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-function formatUnknown(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
 
-  return typeof value === "string" ? value : JSON.stringify(value);
+function formatInteger(value: number) {
+  return new Intl.NumberFormat("ru-RU").format(value);
 }
 
 function ClockIcon() {

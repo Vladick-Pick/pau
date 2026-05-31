@@ -15,6 +15,7 @@ const formatPatchSchema = z.object({
   promptPotential: z.string().optional(),
   promptActive: z.string().optional(),
   promptModerator: z.string().optional(),
+  promptReport: z.string().optional(),
 });
 
 const formatsPatchSchema = z.union([

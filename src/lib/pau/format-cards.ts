@@ -9,6 +9,7 @@ export type FormatCardSource = {
   promptPotential?: string | null;
   promptActive?: string | null;
   promptModerator?: string | null;
+  promptReport?: string | null;
 };
 
 export function summarizeFormatCard(format: FormatCardSource) {
@@ -22,6 +23,7 @@ export function summarizeFormatCard(format: FormatCardSource) {
     format.promptPotential,
     format.promptActive,
     format.promptModerator,
+    format.promptReport,
   ];
 
   return {

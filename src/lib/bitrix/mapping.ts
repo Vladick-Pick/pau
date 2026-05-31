@@ -1,3 +1,13 @@
+import {
+  BITRIX_CONTACT_BUSINESS_EXTRA_1_FIELD,
+  BITRIX_CONTACT_BUSINESS_EXTRA_2_FIELD,
+  BITRIX_CONTACT_BUSINESS_EXTRA_3_FIELD,
+  BITRIX_CONTACT_BUSINESS_MAIN_FIELD,
+  BITRIX_CONTACT_BUSINESS_PROFILE_FIELD,
+  BITRIX_CONTACT_ENRICHMENT_PAYLOAD_FIELD,
+  type BitrixContactBusinessProfile,
+} from "./contact-profile";
+
 export type ParticipantStatus = "POTENTIAL" | "ACTIVE";
 
 export type BitrixEntity = Record<string, unknown>;
@@ -8,11 +18,34 @@ export const BITRIX_BUSINESS_EXTRA_1_FIELD = "UF_CRM_1774269653902";
 export const BITRIX_BUSINESS_EXTRA_2_FIELD = "UF_CRM_1774270188442";
 export const BITRIX_BUSINESS_EXTRA_3_FIELD = "UF_CRM_1774270204829";
 export const BITRIX_ENRICHMENT_FIELD = "UF_CRM_1774269721467";
+export const BITRIX_DEAL_ENRICHMENT_FIELDS = {
+  keyProjects: "UF_CRM_1766147164481",
+  clubConnections: "UF_CRM_1766147207634",
+} as const;
 
 export const PERSONAL_MEETING_FIELDS = [
   "UF_CRM_1669784114991",
   "UF_CRM_1669784197394",
 ] as const;
+
+const CONTACT_CHANNEL_FIELDS = new Set([
+  "email",
+  "fm",
+  "im",
+  "phone",
+  "telegram",
+  "uf_crm_telegram",
+  "ufcrmtelegram",
+]);
+
+const FREE_TEXT_PAYLOAD_FIELDS = new Set([
+  "additionalinfo",
+  "comments",
+  "sourcedescription",
+]);
+
+const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const PHONE_PATTERN = /\+?\d(?:[\s().-]*\d){9,14}/g;
 
 export type NormalizedParticipant = {
   bitrixDealId: string;
@@ -52,6 +85,7 @@ export type EventParticipantProfile = NormalizedParticipant & {
   businessExtra1: string | null;
   businessExtra2: string | null;
   businessExtra3: string | null;
+  businessProfile: BitrixContactBusinessProfile | null;
   enrichment: BitrixEntity | null;
 };
 
@@ -69,10 +103,6 @@ export function mapBitrixDealToParticipant(
     getAny(input.contact, ["id", "ID"]) ??
       getAny(input.deal, ["contactId", "CONTACT_ID", "contactID"])
   );
-  const email =
-    getMultifield(input.contact, "EMAIL") ?? getMultifield(input.deal, "EMAIL");
-  const phone =
-    getMultifield(input.contact, "PHONE") ?? getMultifield(input.deal, "PHONE");
   const fullName =
     compact([
       toOptionalString(getAny(input.contact, ["name", "NAME"])),
@@ -90,29 +120,36 @@ export function mapBitrixDealToParticipant(
     bitrixDealId: dealId,
     bitrixContactId: contactId,
     fullName,
-    email,
-    phone,
-    telegram:
-      toOptionalString(getAny(input.contact, ["ufCrmTelegram", "UF_CRM_TELEGRAM"])) ??
-      toOptionalString(getAny(input.deal, ["ufCrmTelegram", "UF_CRM_TELEGRAM"])),
+    email: null,
+    phone: null,
+    telegram: null,
     company:
       toOptionalString(getAny(input.contact, ["companyTitle", "COMPANY_TITLE"])) ??
       toOptionalString(getAny(input.deal, ["companyTitle", "COMPANY_TITLE"])),
     position:
-      toOptionalString(getAny(input.contact, ["post", "POST"])) ??
+      toOptionalString(
+        getAny(input.contact, ["post", "POST", "UF_CRM_1648137380"])
+      ) ??
       toOptionalString(getAny(input.deal, ["post", "POST"])),
     city:
-      toOptionalString(getAny(input.contact, ["ufCrmCity", "UF_CRM_CITY"])) ??
+      toOptionalString(
+        getAny(input.contact, [
+          "ufCrmCity",
+          "UF_CRM_CITY",
+          "ADDRESS_CITY",
+          "UF_CRM_1648137491",
+        ])
+      ) ??
       toOptionalString(getAny(input.deal, ["ufCrmCity", "UF_CRM_CITY"])),
     sourceFormatSlug: toOptionalString(
       getAny(input.deal, ["ufCrmFormat", "UF_CRM_FORMAT", "formatSlug"])
     ),
-    status: isKnownActive(activeSet, [dealId, contactId, email])
+    status: isKnownActive(activeSet, [dealId, contactId])
       ? "ACTIVE"
       : "POTENTIAL",
     sourcePayload: {
       deal: input.deal,
-      contact: input.contact ?? null,
+      contact: null,
     },
   };
 }
@@ -133,12 +170,33 @@ export function mapBitrixDealToEventParticipant(input: {
     ? toOptionalString(getAny(input.contact, [aliases.birthdateField])) ??
       toOptionalString(getAny(input.deal, [aliases.birthdateField]))
     : null;
+  const businessMain =
+    getStringFromAlias(input.deal, aliases.businessMainField) ??
+    getStringFromAlias(input.contact, BITRIX_CONTACT_BUSINESS_MAIN_FIELD);
+  const businessExtra1 =
+    getStringFromAlias(input.deal, aliases.businessExtra1Field) ??
+    getStringFromAlias(input.contact, BITRIX_CONTACT_BUSINESS_EXTRA_1_FIELD);
+  const businessExtra2 =
+    getStringFromAlias(input.deal, aliases.businessExtra2Field) ??
+    getStringFromAlias(input.contact, BITRIX_CONTACT_BUSINESS_EXTRA_2_FIELD);
+  const businessExtra3 =
+    getStringFromAlias(input.deal, aliases.businessExtra3Field) ??
+    getStringFromAlias(input.contact, BITRIX_CONTACT_BUSINESS_EXTRA_3_FIELD);
+  const businessProfile =
+    getBusinessProfileFromAlias(input.contact, BITRIX_CONTACT_BUSINESS_PROFILE_FIELD) ??
+    buildLegacyBusinessProfile({
+      main: businessMain,
+      extra1: businessExtra1,
+      extra2: businessExtra2,
+      extra3: businessExtra3,
+    });
 
   return {
     ...participant,
+    position: participant.position ?? businessProfile?.main?.role ?? null,
     sourcePayload: {
       deal: sanitizeDealPayload(input.deal),
-      contact: input.contact ?? null,
+      contact: null,
     },
     eventLinkId: toOptionalString(getAny(input.deal, [aliases.eventLinkField])),
     age:
@@ -148,11 +206,16 @@ export function mapBitrixDealToEventParticipant(input: {
     gender:
       getStringFromAlias(input.contact, aliases.genderField) ??
       getStringFromAlias(input.deal, aliases.genderField),
-    businessMain: getStringFromAlias(input.deal, aliases.businessMainField),
-    businessExtra1: getStringFromAlias(input.deal, aliases.businessExtra1Field),
-    businessExtra2: getStringFromAlias(input.deal, aliases.businessExtra2Field),
-    businessExtra3: getStringFromAlias(input.deal, aliases.businessExtra3Field),
-    enrichment: getRecordFromAlias(input.deal, aliases.enrichmentField),
+    businessMain,
+    businessExtra1,
+    businessExtra2,
+    businessExtra3,
+    businessProfile,
+    enrichment: mergeRecords(
+      getRecordFromAlias(input.deal, aliases.enrichmentField),
+      buildDealEnrichmentProfile(input.deal),
+      getRecordFromAlias(input.contact, BITRIX_CONTACT_ENRICHMENT_PAYLOAD_FIELD)
+    ),
   };
 }
 
@@ -187,8 +250,29 @@ export function sanitizeDealPayload(deal: BitrixEntity): BitrixEntity {
   for (const field of PERSONAL_MEETING_FIELDS) {
     delete sanitized[field];
   }
+  for (const field of Object.keys(sanitized)) {
+    if (CONTACT_CHANNEL_FIELDS.has(normalizePayloadFieldName(field))) {
+      delete sanitized[field];
+      continue;
+    }
+
+    sanitized[field] = sanitizeFreeTextPayloadField(field, sanitized[field]);
+  }
 
   return sanitized;
+}
+
+function sanitizeFreeTextPayloadField(field: string, value: unknown) {
+  if (
+    typeof value !== "string" ||
+    !FREE_TEXT_PAYLOAD_FIELDS.has(normalizePayloadFieldName(field))
+  ) {
+    return value;
+  }
+
+  return value
+    .replace(EMAIL_PATTERN, "[redacted-email]")
+    .replace(PHONE_PATTERN, "[redacted-phone]");
 }
 
 export function normalizeAliases(
@@ -204,9 +288,9 @@ export function normalizeAliases(
     businessExtra3Field:
       aliases.businessExtra3Field ?? BITRIX_BUSINESS_EXTRA_3_FIELD,
     enrichmentField: aliases.enrichmentField ?? BITRIX_ENRICHMENT_FIELD,
-    ageField: aliases.ageField ?? null,
-    birthdateField: aliases.birthdateField ?? null,
-    genderField: aliases.genderField ?? null,
+    ageField: aliases.ageField ?? "UF_CRM_1766136147",
+    birthdateField: aliases.birthdateField ?? "BIRTHDATE",
+    genderField: aliases.genderField ?? "UF_CRM_1643718541418",
   };
 }
 
@@ -227,33 +311,6 @@ function getAny(
   return undefined;
 }
 
-function getMultifield(
-  source: BitrixEntity | null | undefined,
-  type: "EMAIL" | "PHONE"
-): string | null {
-  const field =
-    getAny(source, ["fm", "FM"]) ??
-    getAny(source, [type.toLowerCase(), type]);
-  const values =
-    isRecord(field) && Array.isArray(field[type]) ? field[type] : field;
-
-  if (!Array.isArray(values)) {
-    return toOptionalString(values);
-  }
-
-  for (const value of values) {
-    const candidate = isRecord(value)
-      ? getAny(value, ["value", "VALUE"])
-      : value;
-    const normalized = toOptionalString(candidate);
-    if (normalized) {
-      return normalized;
-    }
-  }
-
-  return null;
-}
-
 function requireIdentifier(value: unknown): string {
   const identifier = toOptionalString(value);
   if (!identifier) {
@@ -261,6 +318,10 @@ function requireIdentifier(value: unknown): string {
   }
 
   return identifier;
+}
+
+function normalizePayloadFieldName(field: string) {
+  return field.replaceAll("_", "").toLowerCase();
 }
 
 function toOptionalString(value: unknown): string | null {
@@ -293,6 +354,71 @@ function getRecordFromAlias(
 
   const value = getAny(source, [alias]);
   return isRecord(value) ? value : toOptionalString(value) ? { value } : null;
+}
+
+function buildDealEnrichmentProfile(deal: BitrixEntity): BitrixEntity | null {
+  const enrichment: BitrixEntity = {};
+  for (const [key, field] of Object.entries(BITRIX_DEAL_ENRICHMENT_FIELDS)) {
+    const value = getStringFromAlias(deal, field);
+    if (value) {
+      enrichment[key] = value;
+    }
+  }
+
+  return Object.keys(enrichment).length > 0 ? enrichment : null;
+}
+
+function mergeRecords(...records: Array<BitrixEntity | null>) {
+  const merged: BitrixEntity = {};
+  for (const record of records) {
+    if (record) {
+      Object.assign(merged, record);
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
+function getBusinessProfileFromAlias(
+  source: BitrixEntity | null | undefined,
+  alias: string
+): BitrixContactBusinessProfile | null {
+  const value = getAny(source, [alias]);
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return value as BitrixContactBusinessProfile;
+}
+
+function buildLegacyBusinessProfile(input: {
+  main: string | null;
+  extra1: string | null;
+  extra2: string | null;
+  extra3: string | null;
+}): BitrixContactBusinessProfile | null {
+  const profile: BitrixContactBusinessProfile = {
+    main: input.main ? buildLegacyBusinessBlock(input.main) : null,
+    extra1: input.extra1 ? buildLegacyBusinessBlock(input.extra1) : null,
+    extra2: input.extra2 ? buildLegacyBusinessBlock(input.extra2) : null,
+    extra3: input.extra3 ? buildLegacyBusinessBlock(input.extra3) : null,
+  };
+
+  return Object.values(profile).some(Boolean) ? profile : null;
+}
+
+function buildLegacyBusinessBlock(sphere: string) {
+  return {
+    sphere,
+    specifics: null,
+    role: null,
+    experience: null,
+    okved: null,
+    sharePercent: null,
+    revenue: null,
+    rusprofileUrl: null,
+    siteUrl: null,
+  };
 }
 
 function getNumberFromField(

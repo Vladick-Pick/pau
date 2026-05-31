@@ -27,12 +27,20 @@ import {
   type BitrixEventVisit,
 } from "@/lib/bitrix/client";
 import {
+  buildReadableBitrixContactProfiles,
+  type BitrixContactEntity,
+  type BitrixContactProfileFields,
+} from "@/lib/bitrix/contact-profile";
+import {
   BITRIX_EVENT_LINK_FIELD,
   type BitrixFieldAliases,
   mapBitrixDealToEventParticipant,
   normalizeAliases,
 } from "@/lib/bitrix/mapping";
-import { generateBriefWithOpenRouter } from "@/lib/briefs/openrouter";
+import {
+  generateBriefWithOpenRouter,
+  generateReportWithOpenRouter,
+} from "@/lib/briefs/openrouter";
 import { prisma } from "@/lib/db";
 import {
   getCsvEnv,
@@ -45,7 +53,9 @@ import {
   BITRIX_AUTO_SYNC_INTERVAL_MS,
   BITRIX_AUTO_SYNC_LOCK_KEY,
   buildBitrixAutoSyncSearchPlan,
+  collectBitrixAutoSyncCandidatesSequentially,
   getBitrixAutoSyncLeaseExpiresAt,
+  groupBitrixAutoSyncEventIdsByVisitCursor,
   shouldResetBitrixAutoSyncCursor,
   shouldRunBitrixAutoSync,
 } from "@/lib/pau/auto-sync";
@@ -55,6 +65,7 @@ import { resolvePauFormatForBitrixEvent } from "@/lib/pau/events";
 import {
   buildEventBriefPlan,
   buildEventMatchProfile,
+  buildTranscriptReportInput,
   selectDefaultExportBriefs,
 } from "@/lib/pau/preparation";
 import type {
@@ -68,6 +79,26 @@ import type {
 } from "@/lib/pau/types";
 
 const DEFAULT_FORMAT_SLUG = "guest-meeting";
+const BITRIX_DEAL_CLUB_BRANCH_FIELD = "UF_CRM_DEAL_FILIAL_KLUBA__VYBOR_";
+const BITRIX_DEAL_CLUB_CUSTOMER_FIELD = "UF_CRM_1747682957";
+const BITRIX_DEAL_ENRICHMENT_FIELDS = {
+  keyProjects: "UF_CRM_1766147164481",
+  clubConnections: "UF_CRM_1766147207634",
+} as const;
+const BITRIX_DEAL_CLUB_BRANCH_LABELS: Record<string, string> = {
+  "2": "Москва",
+};
+const BITRIX_DEAL_CLUB_CUSTOMER_LABELS: Record<string, string> = {
+  "5844": "ClubFirst One",
+  "5846": "ClubFirst Globall",
+  "5848": "ClubFirst Ladies",
+  "5850": "ClubFirst Future",
+  "6676": "Атланты",
+  "6678": "Маркетплейсы",
+  "6950": "CTU",
+  "7114": "СЧ",
+  "7142": "Фестиваль АС",
+};
 
 type EventWithRelations = Event & {
   format: EventFormat;
@@ -96,10 +127,12 @@ type FormatPatch = {
   promptPotential?: string;
   promptActive?: string;
   promptModerator?: string;
+  promptReport?: string;
 };
 
 type SyncEventsInput = {
   eventIds: string[];
+  modifiedAfter?: string | null;
 };
 
 type BitrixAutoSyncRuntime = {
@@ -291,7 +324,7 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
   const visits =
     bitrixEvents.length > 0
       ? await bitrix.listEventVisits({
-          modifiedAfter: null,
+          modifiedAfter: input.modifiedAfter ?? null,
           reportYear,
           eventIds: bitrixEvents.map((event) => event.eventId),
         })
@@ -422,18 +455,11 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
       return id ? [[id, deal] as const] : [];
     })
   );
-  const contactIds = uniqueStrings([
-    ...visits.map((visit) => visit.contactId),
-    ...deals.map((deal) => getString(deal.CONTACT_ID) ?? getString(deal.contactId)),
-  ]);
-  const contacts = await bitrix.listContactsByIds(contactIds, ["*", "UF_*"]);
-  const contactsById = new Map(
-    contacts.flatMap((contact) => {
-      const id = getString(contact.ID) ?? getString(contact.id);
-      return id ? [[id, contact] as const] : [];
-    })
+  const contactsById = await fetchReadableContactsForVisitsAndDeals(
+    bitrix,
+    visits,
+    deals
   );
-
   for (const visit of visits) {
     const event =
       (visit.eventId ? eventsByBitrixEventId.get(visit.eventId) : null) ??
@@ -447,15 +473,9 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
       continue;
     }
 
-    const contactId =
-      visit.contactId ??
-      getString(deal.CONTACT_ID) ??
-      getString(deal.contactId) ??
-      null;
-    const contact = contactId ? contactsById.get(contactId) ?? null : null;
     const profile = mapBitrixDealToEventParticipant({
       deal,
-      contact,
+      contact: profileContactForVisitAndDeal(visit, deal, contactsById),
       activeIdentifiers,
       aliases,
     });
@@ -475,9 +495,9 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
         bitrixVisitId: visit.id,
         bitrixContactId: profile.bitrixContactId,
         fullName: profile.fullName,
-        email: profile.email,
-        phone: profile.phone,
-        telegram: profile.telegram,
+        email: null,
+        phone: null,
+        telegram: null,
         company: profile.company,
         position: profile.position,
         city: profile.city,
@@ -487,7 +507,8 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
         businessExtra1: profile.businessExtra1,
         businessExtra2: profile.businessExtra2,
         businessExtra3: profile.businessExtra3,
-        enrichment: jsonOrNull(profile.enrichment),
+        businessProfile: jsonValueOrNull(profile.businessProfile),
+        enrichment: jsonValueOrNull(profile.enrichment),
         sourcePayload: {
           visit,
           profile: profile.sourcePayload,
@@ -504,9 +525,9 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
         bitrixDealId: profile.bitrixDealId,
         bitrixContactId: profile.bitrixContactId,
         fullName: profile.fullName,
-        email: profile.email,
-        phone: profile.phone,
-        telegram: profile.telegram,
+        email: null,
+        phone: null,
+        telegram: null,
         company: profile.company,
         position: profile.position,
         city: profile.city,
@@ -516,7 +537,8 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
         businessExtra1: profile.businessExtra1,
         businessExtra2: profile.businessExtra2,
         businessExtra3: profile.businessExtra3,
-        enrichment: jsonOrNull(profile.enrichment),
+        businessProfile: jsonValueOrNull(profile.businessProfile),
+        enrichment: jsonValueOrNull(profile.enrichment),
         sourcePayload: {
           visit,
           profile: profile.sourcePayload,
@@ -534,6 +556,72 @@ export async function syncEventsFromBitrix(input: SyncEventsInput) {
   );
 
   return { eventsSynced, participantsSynced };
+}
+
+async function fetchReadableContactsForVisitsAndDeals(
+  bitrix: BitrixClient,
+  visits: BitrixEventVisit[],
+  deals: Array<Record<string, unknown>>
+) {
+  const contactIds = uniqueStrings(
+    [
+      ...visits.map((visit) => visit.contactId),
+      ...deals.map(
+        (deal) =>
+          getString(deal.CONTACT_ID) ??
+          getString(deal.contactId) ??
+          getString(deal.contactID)
+      ),
+    ]
+  );
+  if (contactIds.length === 0) {
+    return new Map<string, BitrixContactEntity>();
+  }
+
+  let contacts: BitrixContactEntity[];
+  try {
+    contacts = await bitrix.listContactsByIds(contactIds, ["*", "UF_*"]);
+  } catch {
+    return new Map<string, BitrixContactEntity>();
+  }
+
+  let fields: BitrixContactProfileFields;
+  try {
+    fields = await bitrix.call<BitrixContactProfileFields>("crm.contact.fields");
+  } catch {
+    return indexBitrixContactsById(contacts);
+  }
+
+  const readableContacts = await buildReadableBitrixContactProfiles({
+    bitrix,
+    contacts,
+    fields,
+  });
+
+  return indexBitrixContactsById(readableContacts);
+}
+
+function indexBitrixContactsById(contacts: BitrixContactEntity[]) {
+  return new Map(
+    contacts.flatMap((contact) => {
+      const id = getString(contact.ID) ?? getString(contact.id);
+      return id ? [[id, contact] as const] : [];
+    })
+  );
+}
+
+function profileContactForVisitAndDeal(
+  visit: BitrixEventVisit,
+  deal: Record<string, unknown>,
+  contactsById: Map<string, BitrixContactEntity>
+) {
+  const contactId =
+    visit.contactId ??
+    getString(deal.CONTACT_ID) ??
+    getString(deal.contactId) ??
+    getString(deal.contactID);
+
+  return contactId ? contactsById.get(contactId) ?? null : null;
 }
 
 export async function syncBitrixEventsByFormatQueries(): Promise<BitrixAutoSyncResult> {
@@ -558,20 +646,17 @@ export async function syncBitrixEventsByFormatQueries(): Promise<BitrixAutoSyncR
   }
 
   const bitrix = new BitrixClient();
-  const candidatesByQuery = await Promise.all(
-    searchPlan.map((search) =>
+  const candidatesByQuery = await collectBitrixAutoSyncCandidatesSequentially(
+    searchPlan,
+    (search) =>
       listBitrixEventCandidatesWithClient(
         bitrix,
         search.query,
-        search.modifiedAfter
+        search.eventModifiedAfter
       )
-    )
   );
-  const eventIds = uniqueStrings(
-    candidatesByQuery.flatMap((candidates) =>
-      candidates.map((candidate) => candidate.eventId)
-    )
-  );
+  const syncGroups = groupBitrixAutoSyncEventIdsByVisitCursor(candidatesByQuery);
+  const eventIds = uniqueStrings(syncGroups.flatMap((group) => group.eventIds));
 
   if (eventIds.length === 0) {
     await logSync(
@@ -587,7 +672,15 @@ export async function syncBitrixEventsByFormatQueries(): Promise<BitrixAutoSyncR
     };
   }
 
-  const result = await syncEventsFromBitrix({ eventIds });
+  const result = { eventsSynced: 0, participantsSynced: 0 };
+  for (const group of syncGroups) {
+    const groupResult = await syncEventsFromBitrix({
+      eventIds: group.eventIds,
+      modifiedAfter: group.modifiedAfter,
+    });
+    result.eventsSynced += groupResult.eventsSynced;
+    result.participantsSynced += groupResult.participantsSynced;
+  }
   await saveBitrixAutoSyncCursors(searchPlan, syncStartedAt);
   return {
     queriesChecked: searchPlan.length,
@@ -669,6 +762,7 @@ export async function runEventMatch(eventId: string) {
       businessExtra1: participant.businessExtra1,
       businessExtra2: participant.businessExtra2,
       businessExtra3: participant.businessExtra3,
+      businessProfile: participant.businessProfile,
       enrichment: participant.enrichment,
     })),
   });
@@ -789,6 +883,7 @@ export async function generateEventBriefs(input: {
               businessExtra1: participant.businessExtra1,
               businessExtra2: participant.businessExtra2,
               businessExtra3: participant.businessExtra3,
+              businessProfile: participant.businessProfile,
               enrichment: participant.enrichment,
             }
           : {
@@ -837,6 +932,108 @@ export async function generateEventBriefs(input: {
   return { created: createdBriefs.length };
 }
 
+export async function updateEventParticipantAttendance(input: {
+  eventId: string;
+  participantId: string;
+  attendanceMarked: boolean;
+}) {
+  assertDatabase();
+  const participant = await prisma.eventParticipant.findFirst({
+    where: {
+      id: input.participantId,
+      eventId: input.eventId,
+    },
+    include: {
+      event: { select: { status: true } },
+      briefs: { orderBy: { createdAt: "desc" } },
+    },
+  });
+  if (!participant) {
+    throw new Error("Event participant not found");
+  }
+  if (participant.kind !== "ACTIVE") {
+    throw new Error("Only active participants can be marked manually");
+  }
+  if (participant.event.status !== "PAST") {
+    throw new Error("Attendance can only be marked for past events");
+  }
+
+  const updated = await prisma.eventParticipant.update({
+    where: { id: participant.id },
+    data: { attendanceMarked: input.attendanceMarked },
+    include: {
+      briefs: { orderBy: { createdAt: "desc" } },
+    },
+  });
+
+  return mapEventParticipant(updated);
+}
+
+export async function generateEventReportFromTranscript(input: {
+  eventId: string;
+  transcript: string;
+  createdByRole: Role;
+}) {
+  assertDatabase();
+  const apiKey = getRequiredEnv("OPENROUTER_API_KEY");
+  const model = getOptionalEnv("OPENROUTER_MODEL") ?? "openai/gpt-5-mini";
+  const appTitle = getOptionalEnv("OPENROUTER_APP_TITLE") ?? "ПАУ";
+  const event = await prisma.event.findUnique({
+    where: { id: input.eventId },
+    include: {
+      format: true,
+    },
+  });
+  if (!event) {
+    throw new Error("Event not found");
+  }
+  if (event.status !== "PAST") {
+    throw new Error("Reports can only be generated for past events");
+  }
+  if (!event.format.promptReport.trim()) {
+    throw new Error("Report prompt is not configured for this format");
+  }
+
+  const reportInput = buildTranscriptReportInput({
+    eventTitle: event.title,
+    formatName: event.format.name,
+    promptReport: event.format.promptReport,
+    transcript: input.transcript,
+  });
+  const generated = await generateReportWithOpenRouter({
+    apiKey,
+    appTitle,
+    model,
+    input: reportInput,
+  });
+  const version = await prisma.brief.count({
+    where: {
+      eventId: event.id,
+      briefType: BriefType.REPORT,
+    },
+  });
+  const brief = await prisma.brief.create({
+    data: {
+      eventId: event.id,
+      briefType: BriefType.REPORT,
+      formatSlug: event.formatSlug,
+      model,
+      prompt: reportInput.prompt,
+      content: generated as Prisma.InputJsonValue,
+      rawContent: JSON.stringify(generated),
+      version: version + 1,
+      createdByRole: input.createdByRole,
+    },
+  });
+
+  return mapBrief({
+    ...brief,
+    event,
+    eventParticipant: null,
+    participant: null,
+  });
+}
+
 export async function buildEventBriefsDocx(eventId: string) {
   assertDatabase();
   const event = await prisma.event.findUnique({
@@ -864,11 +1061,17 @@ export async function buildEventBriefsDocx(eventId: string) {
 
   const exportBriefs = selectDefaultExportBriefs(
     event.participants.flatMap((participant) =>
-      participant.briefs.map((brief) => ({
-        participant,
-        brief,
-        briefType: brief.briefType,
-      }))
+      participant.briefs.flatMap((brief) =>
+        brief.briefType === BriefType.REPORT
+          ? []
+          : [
+              {
+                participant,
+                brief,
+                briefType: brief.briefType as Exclude<BriefType, "REPORT">,
+              },
+            ]
+      )
     )
   );
   for (const { participant, brief } of exportBriefs) {
@@ -913,6 +1116,7 @@ export async function updateFormats(patches: FormatPatch[]) {
         promptPotential: patch.promptPotential ?? "",
         promptActive: patch.promptActive ?? "",
         promptModerator: patch.promptModerator ?? "",
+        promptReport: patch.promptReport ?? "",
       },
     });
     if (
@@ -931,6 +1135,30 @@ export async function updateFormats(patches: FormatPatch[]) {
   }
 
   return results.map(mapFormat);
+}
+
+export async function deleteFormat(slug: string) {
+  assertDatabase();
+  const format = await prisma.eventFormat.findUnique({
+    where: { slug },
+  });
+  if (!format) {
+    throw new Error("Format not found");
+  }
+
+  const [events, visits, briefs] = await Promise.all([
+    prisma.event.count({ where: { formatSlug: slug } }),
+    prisma.visit.count({ where: { formatSlug: slug } }),
+    prisma.brief.count({ where: { formatSlug: slug } }),
+  ]);
+  if (events + visits + briefs > 0) {
+    throw new Error("Format is used by existing history and cannot be deleted");
+  }
+
+  const deleted = await prisma.eventFormat.delete({
+    where: { slug },
+  });
+  return mapFormat(deleted);
 }
 
 export async function listUsers() {
@@ -1275,6 +1503,11 @@ function mapEvent(event: EventWithRelations): PauEvent {
     briefs: event.briefs.length,
   };
   const match = event.matchRuns[0] ?? null;
+  const latestReport =
+    event.briefs
+      .filter((brief) => brief.briefType === BriefType.REPORT)
+      .toSorted((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ??
+    null;
 
   return {
     id: event.id,
@@ -1295,6 +1528,13 @@ function mapEvent(event: EventWithRelations): PauEvent {
           activeParticipantCount: match.activeParticipantCount,
           rationale: getRationale(match.responsePayload),
           createdAt: match.createdAt.toISOString(),
+      }
+      : null,
+    latestReport: latestReport
+      ? {
+          id: latestReport.id,
+          summary: getBriefSummary(latestReport.content) ?? "Отчет без резюме",
+          createdAt: latestReport.createdAt.toISOString(),
         }
       : null,
     participants: event.participants.map(mapEventParticipant),
@@ -1307,6 +1547,9 @@ function mapEventParticipant(
   const activeBrief = participant.briefs.find(
     (brief) => brief.briefType === BriefType.ACTIVE
   );
+  const clubBranch = getParticipantClubBranch(participant.sourcePayload);
+  const clubCustomer = getParticipantClubCustomer(participant.sourcePayload);
+  const businessProfile = normalizeParticipantBusinessProfile(participant);
 
   return {
     id: participant.id,
@@ -1316,23 +1559,195 @@ function mapEventParticipant(
     bitrixDealId: participant.bitrixDealId,
     bitrixContactId: participant.bitrixContactId,
     fullName: participant.fullName,
-    email: participant.email,
-    phone: participant.phone,
-    telegram: participant.telegram,
+    email: null,
+    phone: null,
+    telegram: null,
     company: participant.company,
-    position: participant.position,
-    city: participant.city,
+    position: participant.position ?? businessProfile?.main?.role ?? null,
+    city: participant.city ?? clubBranch,
+    clubBranch,
+    clubCustomer,
     age: participant.age,
     gender: participant.gender,
     businessMain: participant.businessMain,
     businessExtra1: participant.businessExtra1,
     businessExtra2: participant.businessExtra2,
     businessExtra3: participant.businessExtra3,
-    enrichment: participant.enrichment,
+    businessProfile,
+    enrichment: normalizeParticipantEnrichment(participant),
+    bitrixComment: getParticipantBitrixComment(participant.sourcePayload),
     matchedScore: participant.matchedScore,
     matchRationale: participant.matchRationale,
+    attendanceMarked: participant.attendanceMarked,
     briefSummary: getBriefSummary(activeBrief?.content),
   };
+}
+
+function normalizeParticipantBusinessProfile(
+  participant: EventParticipant
+): PauEventParticipant["businessProfile"] {
+  if (isRecord(participant.businessProfile)) {
+    const profile = participant.businessProfile as NonNullable<
+      PauEventParticipant["businessProfile"]
+    >;
+    return Object.values(profile).some(Boolean) ? profile : null;
+  }
+
+  const profile: NonNullable<PauEventParticipant["businessProfile"]> = {
+    main: participant.businessMain
+      ? buildLegacyBusinessBlock(participant.businessMain)
+      : null,
+    extra1: participant.businessExtra1
+      ? buildLegacyBusinessBlock(participant.businessExtra1)
+      : null,
+    extra2: participant.businessExtra2
+      ? buildLegacyBusinessBlock(participant.businessExtra2)
+      : null,
+    extra3: participant.businessExtra3
+      ? buildLegacyBusinessBlock(participant.businessExtra3)
+      : null,
+  };
+
+  return Object.values(profile).some(Boolean) ? profile : null;
+}
+
+function buildLegacyBusinessBlock(
+  sphere: string
+): NonNullable<PauEventParticipant["businessProfile"]>["main"] {
+  return {
+    sphere,
+    specifics: null,
+    role: null,
+    experience: null,
+    okved: null,
+    sharePercent: null,
+    revenue: null,
+    rusprofileUrl: null,
+    siteUrl: null,
+  };
+}
+
+function normalizeParticipantEnrichment(
+  participant: EventParticipant
+): PauEventParticipant["enrichment"] {
+  return mergeParticipantEnrichment(
+    getParticipantDealEnrichment(participant.sourcePayload),
+    normalizeEnrichmentRecord(participant.enrichment)
+  );
+}
+
+function normalizeEnrichmentRecord(
+  value: Prisma.JsonValue | null
+): Record<string, string> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const enrichment = Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => {
+      const text = getString(item);
+      return text ? [[key, text]] : [];
+    })
+  );
+
+  return Object.keys(enrichment).length > 0 ? enrichment : null;
+}
+
+function getParticipantClubBranch(
+  sourcePayload: Prisma.JsonValue | null
+): string | null {
+  const deal = getParticipantSourceDeal(sourcePayload);
+  const rawValue = getString(deal?.[BITRIX_DEAL_CLUB_BRANCH_FIELD]);
+  if (!rawValue) {
+    return null;
+  }
+
+  return BITRIX_DEAL_CLUB_BRANCH_LABELS[rawValue] ?? rawValue;
+}
+
+function getParticipantClubCustomer(
+  sourcePayload: Prisma.JsonValue | null
+): string | null {
+  const deal = getParticipantSourceDeal(sourcePayload);
+  const rawValue = getString(deal?.[BITRIX_DEAL_CLUB_CUSTOMER_FIELD]);
+  if (!rawValue) {
+    return null;
+  }
+
+  return BITRIX_DEAL_CLUB_CUSTOMER_LABELS[rawValue] ?? rawValue;
+}
+
+function getParticipantBitrixComment(
+  sourcePayload: Prisma.JsonValue | null
+): string | null {
+  const deal = getParticipantSourceDeal(sourcePayload);
+  return normalizeBitrixText(deal?.COMMENTS);
+}
+
+function getParticipantSourceDeal(
+  sourcePayload: Prisma.JsonValue | null
+): Record<string, unknown> | null {
+  if (!isRecord(sourcePayload)) {
+    return null;
+  }
+
+  const profile = sourcePayload.profile;
+  if (!isRecord(profile) || !isRecord(profile.deal)) {
+    return null;
+  }
+
+  return profile.deal;
+}
+
+function getParticipantDealEnrichment(
+  sourcePayload: Prisma.JsonValue | null
+): Record<string, string> | null {
+  const deal = getParticipantSourceDeal(sourcePayload);
+  if (!deal) {
+    return null;
+  }
+
+  const enrichment = Object.fromEntries(
+    Object.entries(BITRIX_DEAL_ENRICHMENT_FIELDS).flatMap(([key, field]) => {
+      const text = getString(deal[field]);
+      return text ? [[key, text]] : [];
+    })
+  );
+
+  return Object.keys(enrichment).length > 0 ? enrichment : null;
+}
+
+function mergeParticipantEnrichment(
+  ...profiles: Array<Record<string, string> | null>
+): PauEventParticipant["enrichment"] {
+  const merged = Object.assign({}, ...profiles.filter(Boolean));
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
+function normalizeBitrixText(value: unknown): string | null {
+  const text = getString(value);
+  if (!text) {
+    return null;
+  }
+
+  return decodeBasicHtmlEntities(
+    text
+      .replace(/\[\/?p\]/gi, "\n")
+      .replace(/\[br\s*\/?\]/gi, "\n")
+      .replace(/\[url\]([\s\S]*?)\[\/url\]/gi, "$1")
+      .replace(/\[\/?[^\]]+\]/g, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
+}
+
+function decodeBasicHtmlEntities(value: string) {
+  return value
+    .replace(/&quot;/g, "\"")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
 }
 
 function mapFormat(format: EventFormat): PauFormat {
@@ -1348,6 +1763,7 @@ function mapFormat(format: EventFormat): PauFormat {
     promptPotential: format.promptPotential,
     promptActive: format.promptActive,
     promptModerator: format.promptModerator,
+    promptReport: format.promptReport,
   };
 }
 
@@ -1362,7 +1778,11 @@ function mapBrief(
     id: brief.id,
     eventTitle: brief.event?.title ?? null,
     participantName:
-      brief.eventParticipant?.fullName ?? brief.participant?.fullName ?? "Модератор",
+      brief.briefType === BriefType.REPORT
+        ? "Отчет мероприятия"
+        : brief.eventParticipant?.fullName ??
+          brief.participant?.fullName ??
+          "Модератор",
     briefType: brief.briefType,
     model: brief.model,
     summary: getBriefSummary(brief.content) ?? "Без резюме",
@@ -1457,9 +1877,9 @@ async function upsertParticipantFromProfile(
       bitrixContactId: profile.bitrixContactId,
       status: profile.status,
       fullName: profile.fullName,
-      email: profile.email,
-      phone: profile.phone,
-      telegram: profile.telegram,
+      email: null,
+      phone: null,
+      telegram: null,
       company: profile.company,
       position: profile.position,
       city: profile.city,
@@ -1472,9 +1892,9 @@ async function upsertParticipantFromProfile(
       bitrixContactId: profile.bitrixContactId,
       status: profile.status,
       fullName: profile.fullName,
-      email: profile.email,
-      phone: profile.phone,
-      telegram: profile.telegram,
+      email: null,
+      phone: null,
+      telegram: null,
       company: profile.company,
       position: profile.position,
       city: profile.city,
@@ -1509,6 +1929,8 @@ async function ensureDefaultFormats() {
         "Сформируй бриф активного участника: почему он релевантен и какие темы поднять.",
       promptModerator:
         "Сформируй карту связок и риски динамики для модератора.",
+      promptReport:
+        "Сформируй отчет по расшифровке встречи: ключевые темы, решения, риски и следующие шаги.",
     },
   });
 }
@@ -1520,7 +1942,6 @@ async function getActiveIdentifiers() {
     select: {
       bitrixDealId: true,
       bitrixContactId: true,
-      email: true,
     },
   });
 
@@ -1529,7 +1950,6 @@ async function getActiveIdentifiers() {
     ...activeParticipants.flatMap((participant) => [
       participant.bitrixDealId,
       participant.bitrixContactId,
-      participant.email,
     ]),
   ].filter((value): value is string => Boolean(value));
 }
@@ -1567,6 +1987,7 @@ function formatPatchToData(patch: FormatPatch): Prisma.EventFormatUpdateInput {
     promptPotential: patch.promptPotential,
     promptActive: patch.promptActive,
     promptModerator: patch.promptModerator,
+    promptReport: patch.promptReport,
   };
 }
 
@@ -1655,6 +2076,14 @@ function jsonOrNull(value: unknown): Prisma.InputJsonValue | undefined {
   return value as Prisma.InputJsonValue;
 }
 
+function jsonValueOrNull(value: unknown) {
+  if (value === null || value === undefined) {
+    return Prisma.JsonNull;
+  }
+
+  return value as Prisma.InputJsonValue;
+}
+
 function getString(value: unknown) {
   if (value === null || value === undefined) {
     return null;
@@ -1662,6 +2091,10 @@ function getString(value: unknown) {
 
   const stringValue = String(value).trim();
   return stringValue ? stringValue : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function uniqueStrings(values: Array<string | null | undefined>) {

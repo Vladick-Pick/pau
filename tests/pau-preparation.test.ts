@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildEventMatchProfile,
   buildEventBriefPlan,
+  buildTranscriptReportInput,
+  computeEventAttendanceSummary,
+  getLatestPastEvent,
   selectDefaultExportBriefs,
 } from "../src/lib/pau/preparation";
 
@@ -150,5 +153,58 @@ describe("PAU preparation helpers", () => {
         summary: "active",
       },
     ]);
+  });
+
+  it("computes potential and active attendance conversion separately", () => {
+    const summary = computeEventAttendanceSummary([
+      { id: "p1", kind: "POTENTIAL", status: "INVITED", attendanceMarked: false },
+      { id: "p2", kind: "POTENTIAL", status: "ATTENDED", attendanceMarked: false },
+      { id: "p3", kind: "POTENTIAL", status: "UNKNOWN", attendanceMarked: false },
+      { id: "a1", kind: "ACTIVE", status: "INVITED", attendanceMarked: false },
+      { id: "a2", kind: "ACTIVE", status: "ATTENDED", attendanceMarked: true },
+      { id: "a3", kind: "ACTIVE", status: "MISSED", attendanceMarked: true },
+    ]);
+
+    expect(summary).toEqual({
+      potential: {
+        invited: 2,
+        attended: 1,
+        conversion: 0.5,
+      },
+      active: {
+        invited: 3,
+        attended: 1,
+        marked: 2,
+        attendedConversion: 1 / 3,
+        markedConversion: 2 / 3,
+      },
+    });
+  });
+
+  it("selects the latest past event for the main page spotlight", () => {
+    const latest = getLatestPastEvent([
+      { id: "old", startsAt: "2026-05-01T10:00:00.000Z", status: "PAST" },
+      { id: "future", startsAt: "2026-06-01T10:00:00.000Z", status: "UPCOMING" },
+      { id: "latest", startsAt: "2026-05-28T10:00:00.000Z", status: "PAST" },
+      { id: "undated", startsAt: null, status: "PAST" },
+    ]);
+
+    expect(latest?.id).toBe("latest");
+  });
+
+  it("builds transcript report input from a format report prompt", () => {
+    expect(
+      buildTranscriptReportInput({
+        eventTitle: "Гостевая встреча 28.05",
+        formatName: "Гостевая встреча",
+        promptReport: "Сформируй отчет по встрече",
+        transcript: "Участники обсудили партнерства и следующие шаги.",
+      })
+    ).toEqual({
+      eventTitle: "Гостевая встреча 28.05",
+      formatName: "Гостевая встреча",
+      prompt: "Сформируй отчет по встрече",
+      transcript: "Участники обсудили партнерства и следующие шаги.",
+    });
   });
 });

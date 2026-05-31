@@ -42,6 +42,9 @@ describe("PAU event domain", () => {
       deal: {
         ID: "12345",
         TITLE: "Анна Иванова",
+        COMMENTS:
+          "Контакт: anna@example.com, телефон +7 999 000-11-22 после встречи",
+        SOURCE_DESCRIPTION: "Звонок поступил на номер: +7 495 118-09-81.",
         CONTACT_ID: "777",
         [BITRIX_EVENT_LINK_FIELD]: "event-42",
         UF_CRM_1669784114991: "Очная",
@@ -58,8 +61,13 @@ describe("PAU event domain", () => {
         LAST_NAME: "Иванова",
         POST: "CEO",
         COMPANY_TITLE: "Acme",
+        FM: {
+          EMAIL: [{ VALUE: "anna@example.com" }],
+          PHONE: [{ VALUE: "+79990001122" }],
+        },
       },
     });
+    const sourceDeal = participant.sourcePayload.deal as Record<string, unknown>;
 
     expect(participant).toMatchObject({
       eventId: "event-42",
@@ -78,6 +86,13 @@ describe("PAU event domain", () => {
     });
     expect(participant.sourcePayload).not.toHaveProperty("UF_CRM_1669784114991");
     expect(participant.sourcePayload).not.toHaveProperty("UF_CRM_1669784197394");
+    expect(participant.sourcePayload.contact).toBeNull();
+    expect(sourceDeal.COMMENTS).toBe(
+      "Контакт: [redacted-email], телефон [redacted-phone] после встречи"
+    );
+    expect(sourceDeal.SOURCE_DESCRIPTION).toBe(
+      "Звонок поступил на номер: [redacted-phone]."
+    );
   });
 
   it("builds a compact profile for matching from event participant data", () => {
