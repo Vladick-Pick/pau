@@ -41,6 +41,10 @@ import {
   generateBriefWithOpenRouter,
   generateReportWithOpenRouter,
 } from "@/lib/briefs/openrouter";
+import {
+  hashPassword,
+  verifyPassword,
+} from "../auth/passwords";
 import { prisma } from "@/lib/db";
 import {
   getCsvEnv,
@@ -77,6 +81,8 @@ import type {
   PauUser,
   PauWorkspaceSnapshot,
 } from "@/lib/pau/types";
+
+export { hashPassword, verifyPassword } from "../auth/passwords";
 
 const DEFAULT_FORMAT_SLUG = "guest-meeting";
 const BITRIX_DEAL_CLUB_BRANCH_FIELD = "UF_CRM_DEAL_FILIAL_KLUBA__VYBOR_";
@@ -1203,29 +1209,6 @@ export async function updateUser(input: {
     },
   });
   return mapUser(user);
-}
-
-export async function hashPassword(password: string) {
-  const { createHash, randomBytes } = await import("node:crypto");
-  const salt = randomBytes(16).toString("hex");
-  const hash = createHash("sha256").update(`${salt}:${password}`).digest("hex");
-  return `${salt}:${hash}`;
-}
-
-export async function verifyPassword(password: string, storedHash: string) {
-  const { createHash, timingSafeEqual } = await import("node:crypto");
-  const [salt, expected] = storedHash.split(":");
-  if (!salt || !expected) {
-    return false;
-  }
-
-  const actual = createHash("sha256").update(`${salt}:${password}`).digest("hex");
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
-  return (
-    actualBuffer.length === expectedBuffer.length &&
-    timingSafeEqual(actualBuffer, expectedBuffer)
-  );
 }
 
 export async function findActiveUserByCredentials(input: {

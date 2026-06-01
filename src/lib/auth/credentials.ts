@@ -72,6 +72,10 @@ function getPasswordForRole(role: SessionRole): string {
   const envName = `PAU_${role}_PASSWORD`;
   const configured = getOptionalEnv(envName);
   if (configured) {
+    if (process.env.NODE_ENV === "production" && configured.length < 16) {
+      throw new Error(`${envName} must be at least 16 characters in production`);
+    }
+
     return configured;
   }
 

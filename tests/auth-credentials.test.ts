@@ -1,8 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resolveSessionCredentials } from "../src/lib/auth/credentials";
+import {
+  resolvePasswordRole,
+  resolveSessionCredentials,
+} from "../src/lib/auth/credentials";
 
 describe("auth credentials", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("authenticates an active database user when a login is provided", async () => {
     const findActiveUserByCredentials = vi.fn(async () => ({
       role: "MANAGER" as const,
@@ -42,5 +49,14 @@ describe("auth credentials", () => {
       role: "MANAGER",
       userName: "Менеджер",
     });
+  });
+
+  it("rejects short role fallback passwords in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PAU_ADMIN_PASSWORD", "short");
+
+    expect(() => resolvePasswordRole("ADMIN", "short")).toThrow(
+      "PAU_ADMIN_PASSWORD must be at least 16 characters in production"
+    );
   });
 });
