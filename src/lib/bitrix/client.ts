@@ -171,37 +171,40 @@ export class BitrixClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    const response = await this.fetcher(`${this.webhookUrl}/${method}`, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+    try {
+      const response = await this.fetcher(`${this.webhookUrl}/${method}`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      throw new Error(
-        `Bitrix24 API failed with ${response.status} ${response.statusText}`
-      );
+      if (!response.ok) {
+        throw new Error(
+          `Bitrix24 API failed with ${response.status} ${response.statusText}`
+        );
+      }
+
+      const body = (await response.json()) as {
+        result?: T;
+        error?: string;
+        error_description?: string;
+      };
+      if (body.error) {
+        throw new Error(body.error_description ?? body.error);
+      }
+
+      if (body.result === undefined) {
+        throw new Error("Bitrix24 API returned an empty result");
+      }
+
+      return body.result;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const body = (await response.json()) as {
-      result?: T;
-      error?: string;
-      error_description?: string;
-    };
-    if (body.error) {
-      throw new Error(body.error_description ?? body.error);
-    }
-
-    if (body.result === undefined) {
-      throw new Error("Bitrix24 API returned an empty result");
-    }
-
-    return body.result;
   }
 
   async getItem(entityTypeId: number, id: string | number) {

@@ -24,6 +24,41 @@ describe("Bitrix event smart-process client", () => {
     expect(attempts).toBe(2);
   });
 
+  it("aborts stalled Bitrix response bodies", async () => {
+    let attempts = 0;
+    const client = new BitrixClient({
+      webhookUrl: "https://example.bitrix24.test/rest/1/token",
+      requestIntervalMs: 0,
+      timeoutMs: 5,
+      fetchImpl: async (_url, init) => {
+        attempts += 1;
+        const signal = init?.signal as AbortSignal;
+
+        return {
+          ok: true,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              signal.addEventListener(
+                "abort",
+                () =>
+                  reject(
+                    Object.assign(new Error("This operation was aborted"), {
+                      name: "AbortError",
+                    })
+                  ),
+                { once: true }
+              );
+            }),
+        } as Response;
+      },
+    });
+
+    await expect(client.getSmartProcessTypes()).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(attempts).toBe(2);
+  });
+
   it("lists deal and contact records by selected ids", async () => {
     const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
     const client = new BitrixClient({
