@@ -35,6 +35,7 @@ export default async function LoginPage({
     redirect("/");
   }
   const params = await searchParams;
+  const isProduction = process.env.NODE_ENV === "production";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -53,7 +54,8 @@ export default async function LoginPage({
                   <KeyRoundIcon />
                   <AlertTitle>Доступ не подтвержден</AlertTitle>
                   <AlertDescription>
-                    Проверьте роль и пароль из переменных окружения.
+                    Проверьте логин и пароль. Для входа по роли оставьте логин
+                    пустым и выберите нужную роль.
                   </AlertDescription>
                 </Alert>
               ) : null}
@@ -89,12 +91,14 @@ export default async function LoginPage({
                   />
                 </InputGroup>
                 <FieldDescription>
-                  В dev-режиме пароли по умолчанию: admin, manager, viewer.
+                  {isProduction
+                    ? "В production используйте выданный пароль."
+                    : "В dev-режиме пароли по умолчанию: admin, manager, viewer."}
                 </FieldDescription>
               </Field>
             </FieldGroup>
           </CardContent>
-          <CardFooter className="flex flex-col gap-2 sm:flex-row">
+          <CardFooter className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <Button className="w-full" name="role" value="MANAGER" type="submit">
               <LogInIcon data-icon="inline-start" />
               Manager
