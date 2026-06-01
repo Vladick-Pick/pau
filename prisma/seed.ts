@@ -62,12 +62,13 @@ const formats = [
 ];
 
 async function main() {
+  const existingFormats = await prisma.eventFormat.count();
+  if (existingFormats > 0) {
+    return;
+  }
+
   for (const format of formats) {
-    await prisma.eventFormat.upsert({
-      where: { slug: format.slug },
-      update: format,
-      create: format,
-    });
+    await prisma.eventFormat.create({ data: format });
   }
 }
 
