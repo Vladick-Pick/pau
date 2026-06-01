@@ -58,8 +58,6 @@ WORKDIR /app
 
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.build-revision ./.build-revision
-COPY --from=build --chown=app:app /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=build --chown=app:app /app/node_modules/@prisma ./node_modules/@prisma
 
 USER app
 
