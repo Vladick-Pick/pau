@@ -1854,35 +1854,51 @@ function getPreparationEventStatus(
 async function upsertParticipantFromProfile(
   profile: Awaited<ReturnType<typeof mapBitrixDealToEventParticipant>>
 ) {
-  return prisma.participant.upsert({
-    where: { bitrixDealId: profile.bitrixDealId },
-    update: {
-      bitrixContactId: profile.bitrixContactId,
-      status: profile.status,
-      fullName: profile.fullName,
-      email: null,
-      phone: null,
-      telegram: null,
-      company: profile.company,
-      position: profile.position,
-      city: profile.city,
-      sourceFormatSlug: null,
-      sourcePayload: profile.sourcePayload as Prisma.InputJsonValue,
-      lastSyncedAt: new Date(),
-    },
-    create: {
+  const [participantByContact, participantByDeal] = await Promise.all([
+    profile.bitrixContactId
+      ? prisma.participant.findUnique({
+          where: { bitrixContactId: profile.bitrixContactId },
+        })
+      : null,
+    profile.bitrixDealId
+      ? prisma.participant.findUnique({
+          where: { bitrixDealId: profile.bitrixDealId },
+        })
+      : null,
+  ]);
+  const participant = participantByContact ?? participantByDeal;
+  const conflictingDealParticipant =
+    participantByDeal && participantByDeal.id !== participant?.id;
+
+  const data = {
+    bitrixContactId: profile.bitrixContactId,
+    status: profile.status,
+    fullName: profile.fullName,
+    email: null,
+    phone: null,
+    telegram: null,
+    company: profile.company,
+    position: profile.position,
+    city: profile.city,
+    sourcePayload: profile.sourcePayload as Prisma.InputJsonValue,
+    lastSyncedAt: new Date(),
+  };
+
+  if (participant) {
+    return prisma.participant.update({
+      where: { id: participant.id },
+      data: {
+        ...data,
+        bitrixDealId: conflictingDealParticipant ? undefined : profile.bitrixDealId,
+        sourceFormatSlug: null,
+      },
+    });
+  }
+
+  return prisma.participant.create({
+    data: {
+      ...data,
       bitrixDealId: profile.bitrixDealId,
-      bitrixContactId: profile.bitrixContactId,
-      status: profile.status,
-      fullName: profile.fullName,
-      email: null,
-      phone: null,
-      telegram: null,
-      company: profile.company,
-      position: profile.position,
-      city: profile.city,
-      sourcePayload: profile.sourcePayload as Prisma.InputJsonValue,
-      lastSyncedAt: new Date(),
     },
   });
 }

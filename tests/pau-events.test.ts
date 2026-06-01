@@ -164,4 +164,29 @@ describe("PAU event domain", () => {
       })
     ).toBe("working-group");
   });
+
+  it("resolves a PAU format from its Bitrix sync title query", () => {
+    const formats = [
+      {
+        slug: "guest-meeting",
+        bitrixEventTypeIds: ["guest-meeting"],
+        bitrixSyncTitleQuery: "Гостевая встреча",
+      },
+      {
+        slug: "expert-dialogue",
+        bitrixEventTypeIds: ["expert-dialogue"],
+        bitrixSyncTitleQuery: "Диалог с экспертом",
+      },
+    ];
+
+    expect(
+      resolvePauFormatForBitrixEvent(formats, {
+        title: "МСК Диалог с Экспертом: Светлана Миронюк 02.06.26",
+        eventTypeId: null,
+        eventTypeLabel: null,
+        formatId: "2788",
+        formatLabel: "оффлайн",
+      })
+    ).toBe("expert-dialogue");
+  });
 });

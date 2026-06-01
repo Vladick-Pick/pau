@@ -82,6 +82,7 @@ export type EventParticipantProfile = {
 export type PauFormatCandidate = {
   slug: string;
   bitrixEventTypeIds: string[];
+  bitrixSyncTitleQuery?: string | null;
 };
 
 export type BitrixEventFormatMetadata = {
@@ -208,7 +209,7 @@ export function resolvePauFormatForBitrixEvent(
     .filter(Boolean);
   const eventTitle = normalizeLabel(event.title);
   const matched = formats.find((format) =>
-    format.bitrixEventTypeIds.some((id) => {
+    formatIdentifiers(format).some((id) => {
       const normalizedId = normalizeLabel(id);
       return (
         Boolean(normalizedId) &&
@@ -223,6 +224,13 @@ export function resolvePauFormatForBitrixEvent(
     formats[0]?.slug ??
     defaultSlug
   );
+}
+
+function formatIdentifiers(format: PauFormatCandidate) {
+  return [
+    ...format.bitrixEventTypeIds,
+    format.bitrixSyncTitleQuery,
+  ].filter((value): value is string => Boolean(value?.trim()));
 }
 
 export function extractEventParticipantProfile(participant: EventParticipantProfile) {
