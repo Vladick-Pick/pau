@@ -1,4 +1,5 @@
 import {
+  type ActiveParticipantDecision,
   BriefType,
   Prisma,
   type AppUser,
@@ -53,6 +54,7 @@ import {
   isDatabaseConfigured,
 } from "@/lib/env";
 import { requestEventMatch } from "@/lib/matching/client";
+import { buildLocalEventMatchResult } from "@/lib/matching/local-event-matching";
 import {
   BITRIX_AUTO_SYNC_INTERVAL_MS,
   BITRIX_AUTO_SYNC_LOCK_KEY,
@@ -732,8 +734,8 @@ export function startBitrixAutoSyncScheduler(initialLastStartedAt: Date | null =
 
 export async function runEventMatch(eventId: string) {
   assertDatabase();
-  const endpoint = getRequiredEnv("MATCHING_API_ENDPOINT");
-  const apiKey = getRequiredEnv("MATCHING_API_KEY");
+  const endpoint = getOptionalEnv("MATCHING_API_ENDPOINT");
+  const apiKey = getOptionalEnv("MATCHING_API_KEY");
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     include: eventInclude,
@@ -774,7 +776,11 @@ export async function runEventMatch(eventId: string) {
   });
 
   try {
-    const result = await requestEventMatch({ endpoint, apiKey }, profile);
+    const result = shouldUseLocalEventMatching()
+      ? getLocalEventMatchingResult(profile)
+      : endpoint && apiKey
+        ? await requestEventMatch({ endpoint, apiKey }, profile)
+        : getLocalEventMatchingResult(profile);
     await prisma.eventMatchRun.create({
       data: {
         eventId,
@@ -797,8 +803,11 @@ export async function runEventMatch(eventId: string) {
       });
       const data = {
         kind: "ACTIVE" as const,
-        status: "INVITED" as const,
+        status: existing?.activeDecision
+          ? activeDecisionStatus(existing.activeDecision)
+          : ("UNKNOWN" as const),
         fullName: active.fullName,
+        ...extractMatchingProfileFields(active.profile),
         matchedScore: active.score ?? null,
         matchRationale: active.rationale ?? result.rationale,
         sourcePayload: active.profile
@@ -967,6 +976,52 @@ export async function updateEventParticipantAttendance(input: {
   const updated = await prisma.eventParticipant.update({
     where: { id: participant.id },
     data: { attendanceMarked: input.attendanceMarked },
+    include: {
+      briefs: { orderBy: { createdAt: "desc" } },
+    },
+  });
+
+  return mapEventParticipant(updated);
+}
+
+export async function updateEventParticipantActiveDecision(input: {
+  eventId: string;
+  participantId: string;
+  decision: ActiveParticipantDecision;
+  comment?: string | null;
+}) {
+  assertDatabase();
+  const participant = await prisma.eventParticipant.findFirst({
+    where: {
+      id: input.participantId,
+      eventId: input.eventId,
+    },
+    include: {
+      briefs: { orderBy: { createdAt: "desc" } },
+    },
+  });
+  if (!participant) {
+    throw new Error("Event participant not found");
+  }
+  if (participant.kind !== "ACTIVE") {
+    throw new Error("Only active participants can be marked manually");
+  }
+
+  const comment = input.comment?.trim() ?? "";
+  if (input.decision === "DECLINED_BY_US" && !comment) {
+    throw new Error("Comment is required when declining an active participant");
+  }
+
+  const updated = await prisma.eventParticipant.update({
+    where: { id: participant.id },
+    data: {
+      activeDecision: input.decision,
+      activeDecisionComment:
+        input.decision === "DECLINED_BY_US" ? comment : null,
+      attendanceMarked: input.decision === "INVITED_ATTENDED",
+      status: activeDecisionStatus(input.decision),
+      statusUpdatedAt: new Date(),
+    },
     include: {
       briefs: { orderBy: { createdAt: "desc" } },
     },
@@ -1246,7 +1301,8 @@ export function getIntegrationStatus(): PauIntegrationStatus {
           getOptionalEnv("BITRIX24_WEBHOOK_TOKEN"))
     ),
     matching: Boolean(
-      getOptionalEnv("MATCHING_API_ENDPOINT") && getOptionalEnv("MATCHING_API_KEY")
+      shouldUseLocalEventMatching() ||
+        (getOptionalEnv("MATCHING_API_ENDPOINT") && getOptionalEnv("MATCHING_API_KEY"))
     ),
     openrouter: Boolean(getOptionalEnv("OPENROUTER_API_KEY")),
   };
@@ -1562,6 +1618,8 @@ function mapEventParticipant(
     matchedScore: participant.matchedScore,
     matchRationale: participant.matchRationale,
     attendanceMarked: participant.attendanceMarked,
+    activeDecision: participant.activeDecision,
+    activeDecisionComment: participant.activeDecisionComment,
     briefSummary: getBriefSummary(activeBrief?.content),
   };
 }
@@ -1851,6 +1909,79 @@ function getPreparationEventStatus(
   return Date.parse(eventDate) >= Date.now() ? "UPCOMING" : "PAST";
 }
 
+function activeDecisionStatus(
+  decision: ActiveParticipantDecision
+): EventParticipantStatus {
+  if (decision === "INVITED_ATTENDED") {
+    return "ATTENDED";
+  }
+
+  return "REFUSED";
+}
+
+function getLocalEventMatchingResult(
+  profile: Parameters<typeof buildLocalEventMatchResult>[0]
+) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Matching API credentials are required in production");
+  }
+
+  return buildLocalEventMatchResult(profile);
+}
+
+function shouldUseLocalEventMatching() {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
+  if (getOptionalEnv("PAU_LOCAL_MATCHING") === "1") {
+    return true;
+  }
+
+  return !(
+    getOptionalEnv("MATCHING_API_ENDPOINT") && getOptionalEnv("MATCHING_API_KEY")
+  );
+}
+
+function extractMatchingProfileFields(profile: unknown) {
+  if (!isPlainRecord(profile)) {
+    return {};
+  }
+
+  return {
+    ...stringField("company", profile.company),
+    ...stringField("position", profile.position),
+    ...stringField("city", profile.city),
+    ...stringField("gender", profile.gender),
+    ...stringField("businessMain", profile.businessMain),
+    ...stringField("businessExtra1", profile.businessExtra1),
+    ...stringField("businessExtra2", profile.businessExtra2),
+    ...stringField("businessExtra3", profile.businessExtra3),
+    ...numberField("age", profile.age),
+  };
+}
+
+function stringField(field: string, value: unknown) {
+  if (typeof value !== "string") {
+    return {};
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? { [field]: trimmed } : {};
+}
+
+function numberField(field: string, value: unknown) {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return {};
+  }
+
+  return { [field]: value };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 async function upsertParticipantFromProfile(
   profile: Awaited<ReturnType<typeof mapBitrixDealToEventParticipant>>
 ) {
@@ -1994,7 +2125,17 @@ function countStatus(
   participants: EventParticipant[],
   status: EventParticipantStatus
 ) {
-  return participants.filter((participant) => participant.status === status).length;
+  return participants.filter((participant) => {
+    if (participant.status !== status) {
+      return false;
+    }
+
+    return !(
+      status === "REFUSED" &&
+      participant.kind === "ACTIVE" &&
+      participant.activeDecision === "DECLINED_BY_US"
+    );
+  }).length;
 }
 
 function briefToParagraphs(content: Prisma.JsonValue | null) {

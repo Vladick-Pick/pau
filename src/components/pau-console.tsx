@@ -121,6 +121,8 @@ type FormatDraft = Omit<PauFormat, "bitrixEventTypeIds" | "matchingRules"> & {
   matchingRulesText: string;
 };
 
+type ActiveDecision = NonNullable<PauEventParticipant["activeDecision"]>;
+
 const MAX_REPORT_TRANSCRIPT_FILE_BYTES = MAX_REPORT_TRANSCRIPT_CHARS * 4;
 
 const mainNavigation: Array<{
@@ -288,10 +290,11 @@ export function PauConsole({
     });
   }
 
-  function markParticipantAttendance(
+  function updateParticipantActiveDecision(
     eventId: string,
     participantId: string,
-    attendanceMarked: boolean
+    activeDecision: ActiveDecision,
+    activeDecisionComment?: string
   ) {
     runAction(async () => {
       const response = await fetch(
@@ -299,7 +302,10 @@ export function PauConsole({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ attendanceMarked }),
+          body: JSON.stringify({
+            activeDecision,
+            activeDecisionComment,
+          }),
         }
       );
       const body = await response.json();
@@ -309,8 +315,8 @@ export function PauConsole({
 
       return {
         tone: "default",
-        title: "Посещение обновлено",
-        message: body.participant?.fullName ?? "Отметка сохранена.",
+        title: "Решение обновлено",
+        message: body.participant?.fullName ?? "Статус активного участника сохранен.",
       };
     });
   }
@@ -541,7 +547,7 @@ export function PauConsole({
               data={data}
               isPending={isPending}
               latestPastEvent={latestPastEvent}
-              onAttendanceMark={markParticipantAttendance}
+              onActiveDecisionChange={updateParticipantActiveDecision}
               onBriefs={generateBriefs}
               onExport={(eventId) => {
                 window.location.href = `/api/events/${eventId}/export`;
@@ -581,7 +587,7 @@ export function PauConsole({
               expandedEventIds={expandedHistoryEventIds}
               integrations={data.integrationStatus}
               isPending={isPending}
-              onAttendanceMark={markParticipantAttendance}
+              onActiveDecisionChange={updateParticipantActiveDecision}
               onExport={(eventId) => {
                 window.location.href = `/api/events/${eventId}/export`;
               }}
@@ -620,7 +626,7 @@ function PreparationView({
   data,
   isPending,
   latestPastEvent,
-  onAttendanceMark,
+  onActiveDecisionChange,
   onBriefs,
   onExport,
   onMatch,
@@ -635,10 +641,11 @@ function PreparationView({
   data: PauWorkspaceSnapshot;
   isPending: boolean;
   latestPastEvent: PauEvent | null;
-  onAttendanceMark: (
+  onActiveDecisionChange: (
     eventId: string,
     participantId: string,
-    attendanceMarked: boolean
+    activeDecision: ActiveDecision,
+    activeDecisionComment?: string
   ) => void;
   onBriefs: (eventId: string) => void;
   onExport: (eventId: string) => void;
@@ -741,7 +748,7 @@ function PreparationView({
           event={selectedEvent}
           integrations={data.integrationStatus}
           isPending={isPending}
-          onAttendanceMark={onAttendanceMark}
+          onActiveDecisionChange={onActiveDecisionChange}
           onBriefs={onBriefs}
           onExport={onExport}
           onMatch={onMatch}
@@ -760,7 +767,7 @@ function EventWorkspace({
   event,
   integrations,
   isPending,
-  onAttendanceMark,
+  onActiveDecisionChange,
   onBriefs,
   onExport,
   onMatch,
@@ -773,10 +780,11 @@ function EventWorkspace({
   event: PauEvent;
   integrations: PauWorkspaceSnapshot["integrationStatus"];
   isPending: boolean;
-  onAttendanceMark: (
+  onActiveDecisionChange: (
     eventId: string,
     participantId: string,
-    attendanceMarked: boolean
+    activeDecision: ActiveDecision,
+    activeDecisionComment?: string
   ) => void;
   onBriefs: (eventId: string) => void;
   onExport: (eventId: string) => void;
@@ -786,7 +794,7 @@ function EventWorkspace({
   selectedParticipant: PauEventParticipant | null;
 }) {
   const canRunPreparationActions = canManage && event.status !== "PAST";
-  const canMarkAttendance = canManage && event.status === "PAST";
+  const canMarkAttendance = canManage;
 
   return (
     <section className="flex min-w-0 flex-col gap-5">
@@ -823,7 +831,7 @@ function EventWorkspace({
           databaseEnabled={databaseEnabled}
           eventId={event.id}
           isPending={isPending}
-          onAttendanceMark={onAttendanceMark}
+          onActiveDecisionChange={onActiveDecisionChange}
           onParticipantSelect={onParticipantSelect}
           participants={event.participants}
           selectedParticipantId={selectedParticipant?.id ?? null}
@@ -856,10 +864,10 @@ function AttendanceSummaryPanel({ event }: { event: PauEvent }) {
           Активные участники
         </p>
         <div className="mt-2 grid grid-cols-4 gap-2">
-          <Count label="Звали" value={summary.active.invited} />
-          <Count label="Дошли" value={summary.active.attended} />
-          <Count label="Был факт" value={summary.active.marked} />
-          <Count label="Факт" value={formatPercent(summary.active.markedConversion)} />
+          <Count label="К решению" value={summary.active.pending} />
+          <Count label="Пришел" value={summary.active.invitedAttended} />
+          <Count label="Не пришел" value={summary.active.invitedRefused} />
+          <Count label="Мы отказали" value={summary.active.declinedByUs} />
         </div>
       </div>
     </div>
@@ -1118,7 +1126,7 @@ function ParticipantsTable({
   databaseEnabled,
   eventId,
   isPending,
-  onAttendanceMark,
+  onActiveDecisionChange,
   onParticipantSelect,
   participants,
   selectedParticipantId,
@@ -1127,10 +1135,11 @@ function ParticipantsTable({
   databaseEnabled: boolean;
   eventId: string;
   isPending: boolean;
-  onAttendanceMark: (
+  onActiveDecisionChange: (
     eventId: string,
     participantId: string,
-    attendanceMarked: boolean
+    activeDecision: ActiveDecision,
+    activeDecisionComment?: string
   ) => void;
   onParticipantSelect: (participantId: string) => void;
   participants: PauEventParticipant[];
@@ -1144,7 +1153,7 @@ function ParticipantsTable({
             <TableHead>Участник</TableHead>
             <TableHead>Бизнес</TableHead>
             <TableHead>Статус</TableHead>
-            <TableHead>Факт</TableHead>
+            <TableHead>Решение</TableHead>
             <TableHead>Сделка</TableHead>
           </TableRow>
         </TableHeader>
@@ -1179,26 +1188,19 @@ function ParticipantsTable({
               </TableCell>
               <TableCell>
                 {participant.kind === "ACTIVE" ? (
-                  <label
-                    className="flex w-fit items-center gap-2 text-xs"
-                    onClick={(clickEvent) => clickEvent.stopPropagation()}
-                  >
-                    <input
-                      aria-label={`Отметить фактическое участие: ${participant.fullName}`}
-                      checked={participant.attendanceMarked}
-                      className="size-4 accent-primary"
-                      disabled={!canMarkAttendance || !databaseEnabled || isPending}
-                      onChange={(changeEvent) =>
-                        onAttendanceMark(
-                          eventId,
-                          participant.id,
-                          changeEvent.target.checked
-                        )
-                      }
-                      type="checkbox"
-                    />
-                    Был
-                  </label>
+                  <ActiveDecisionControl
+                    canManage={canMarkAttendance}
+                    databaseEnabled={databaseEnabled}
+                    eventId={eventId}
+                    isPending={isPending}
+                    key={[
+                      participant.id,
+                      participant.activeDecision ?? "",
+                      participant.activeDecisionComment ?? "",
+                    ].join(":")}
+                    onChange={onActiveDecisionChange}
+                    participant={participant}
+                  />
                 ) : (
                   <span className="text-sm text-muted-foreground">-</span>
                 )}
@@ -1212,6 +1214,116 @@ function ParticipantsTable({
           ))}
         </TableBody>
       </Table>
+    </div>
+  );
+}
+
+function ActiveDecisionControl({
+  canManage,
+  databaseEnabled,
+  eventId,
+  isPending,
+  onChange,
+  participant,
+}: {
+  canManage: boolean;
+  databaseEnabled: boolean;
+  eventId: string;
+  isPending: boolean;
+  onChange: (
+    eventId: string,
+    participantId: string,
+    activeDecision: ActiveDecision,
+    activeDecisionComment?: string
+  ) => void;
+  participant: PauEventParticipant;
+}) {
+  const [decision, setDecision] = useState<ActiveDecision | "">(
+    participant.activeDecision ?? ""
+  );
+  const [comment, setComment] = useState(
+    participant.activeDecisionComment ?? ""
+  );
+  const savedDecision = participant.activeDecision ?? "";
+  const savedComment = participant.activeDecisionComment ?? "";
+  const requiresComment = decision === "DECLINED_BY_US";
+  const hasChanges =
+    decision !== savedDecision ||
+    (requiresComment && comment.trim() !== savedComment);
+  const canSave =
+    Boolean(decision) &&
+    hasChanges &&
+    (!requiresComment || Boolean(comment.trim())) &&
+    canManage &&
+    databaseEnabled &&
+    !isPending;
+
+  return (
+    <div
+      className="flex min-w-52 flex-col gap-2"
+      onClick={(clickEvent) => clickEvent.stopPropagation()}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          disabled={!canManage || !databaseEnabled || isPending}
+          onValueChange={(value) => setDecision(value as ActiveDecision)}
+          value={decision}
+        >
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Решение">
+              {(value: ActiveDecision | null) =>
+                value ? activeDecisionLabel(value) : "Решение"
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="INVITED_ATTENDED">Пригласили, пришел</SelectItem>
+              <SelectItem value="INVITED_REFUSED">Пригласили, отказал</SelectItem>
+              <SelectItem value="DECLINED_BY_US">Мы отказали</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Button
+          disabled={!canSave}
+          onClick={() => {
+            if (!decision) {
+              return;
+            }
+
+            onChange(
+              eventId,
+              participant.id,
+              decision,
+              requiresComment ? comment.trim() : undefined
+            );
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Сохранить
+        </Button>
+      </div>
+      {requiresComment ? (
+        <Textarea
+          aria-label={`Причина отказа: ${participant.fullName}`}
+          className="min-h-14 text-xs"
+          disabled={!canManage || !databaseEnabled || isPending}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder="Почему не зовем"
+          value={comment}
+        />
+      ) : null}
+      {participant.activeDecision ? (
+        <ActiveDecisionBadge decision={participant.activeDecision} />
+      ) : null}
+      {participant.activeDecision === "DECLINED_BY_US" &&
+      participant.activeDecisionComment ? (
+        <p className="max-w-72 text-xs text-muted-foreground">
+          {participant.activeDecisionComment}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1232,6 +1344,8 @@ function ParticipantDetails({
     },
   ];
   const matchingFacts = [
+    { label: "Решение", value: participant.activeDecision ? activeDecisionLabel(participant.activeDecision) : null },
+    { label: "Комментарий", value: participant.activeDecisionComment },
     { label: "Score", value: participant.matchedScore?.toFixed(2) },
     { label: "Rationale", value: participant.matchRationale },
     { label: "Бриф", value: participant.briefSummary },
@@ -1649,11 +1763,11 @@ function EventConversionStrip({ event }: { event: PauEvent }) {
       <div className="rounded-md border bg-background p-2">
         <p className="text-[11px] text-muted-foreground">Активные</p>
         <p className="font-medium">
-          {summary.active.invited}
-          {" -> "}
-          {summary.active.attended}
-          {" -> "}
-          {summary.active.marked} · {formatPercent(summary.active.markedConversion)}
+          {summary.active.matched} · к решению {summary.active.pending}
+          {" · "}
+          пришли {summary.active.invitedAttended}
+          {" · "}
+          отказ {summary.active.invitedRefused + summary.active.declinedByUs}
         </p>
       </div>
     </div>
@@ -1679,8 +1793,8 @@ function CompactParticipantsStatus({
           <div className="flex shrink-0 items-center gap-1">
             <KindBadge kind={participant.kind} />
             <ParticipantStatusBadge status={participant.status} />
-            {participant.kind === "ACTIVE" && participant.attendanceMarked ? (
-              <Badge variant="secondary">был факт</Badge>
+            {participant.kind === "ACTIVE" && participant.activeDecision ? (
+              <ActiveDecisionBadge decision={participant.activeDecision} />
             ) : null}
           </div>
         </div>
@@ -1699,7 +1813,7 @@ function HistoryView({
   expandedEventIds,
   integrations,
   isPending,
-  onAttendanceMark,
+  onActiveDecisionChange,
   onExport,
   onParticipantSelect,
   onReport,
@@ -1715,10 +1829,11 @@ function HistoryView({
   expandedEventIds: Set<string>;
   integrations: PauWorkspaceSnapshot["integrationStatus"];
   isPending: boolean;
-  onAttendanceMark: (
+  onActiveDecisionChange: (
     eventId: string,
     participantId: string,
-    attendanceMarked: boolean
+    activeDecision: ActiveDecision,
+    activeDecisionComment?: string
   ) => void;
   onExport: (eventId: string) => void;
   onParticipantSelect: (participantId: string) => void;
@@ -1800,7 +1915,7 @@ function HistoryView({
           event={selectedEvent}
           integrations={integrations}
           isPending={isPending}
-          onAttendanceMark={onAttendanceMark}
+          onActiveDecisionChange={onActiveDecisionChange}
           onBriefs={() => undefined}
           onExport={onExport}
           onMatch={() => undefined}
@@ -2128,6 +2243,14 @@ function ParticipantStatusBadge({
   return <Badge variant={variant}>{participantStatusLabel(status)}</Badge>;
 }
 
+function ActiveDecisionBadge({ decision }: { decision: ActiveDecision }) {
+  return (
+    <Badge variant={decision === "INVITED_ATTENDED" ? "secondary" : "outline"}>
+      {activeDecisionLabel(decision)}
+    </Badge>
+  );
+}
+
 function KindBadge({ kind }: { kind: PauEventParticipant["kind"] }) {
   return <Badge variant={kind === "ACTIVE" ? "secondary" : "outline"}>{kind}</Badge>;
 }
@@ -2158,6 +2281,15 @@ function participantStatusLabel(status: PauEventParticipant["status"]) {
     UNKNOWN: "неизвестно",
   };
   return labels[status] ?? status.toLowerCase();
+}
+
+function activeDecisionLabel(decision: ActiveDecision) {
+  const labels: Record<ActiveDecision, string> = {
+    INVITED_ATTENDED: "пригласили, пришел",
+    INVITED_REFUSED: "пригласили, отказал",
+    DECLINED_BY_US: "мы отказали",
+  };
+  return labels[decision];
 }
 
 function toFormatDraft(format: PauFormat): FormatDraft {

@@ -1,5 +1,6 @@
 import type {
   BriefType,
+  ActiveParticipantDecision,
   EventParticipantKind,
   EventParticipantStatus,
   PreparationEventStatus,
@@ -101,6 +102,8 @@ export type PauEventParticipant = {
   matchedScore: number | null;
   matchRationale: string | null;
   attendanceMarked: boolean;
+  activeDecision: ActiveParticipantDecision | null;
+  activeDecisionComment: string | null;
   briefSummary: string | null;
 };
 

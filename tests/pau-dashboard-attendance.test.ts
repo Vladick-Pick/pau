@@ -58,6 +58,10 @@ vi.mock("@/lib/matching/client", () => ({
   requestEventMatch: vi.fn(),
 }));
 
+vi.mock("@/lib/matching/local-event-matching", () => ({
+  buildLocalEventMatchResult: vi.fn(),
+}));
+
 vi.mock("@/lib/pau/auto-sync", () => ({
   BITRIX_AUTO_SYNC_INTERVAL_MS: 60 * 60 * 1000,
   BITRIX_AUTO_SYNC_LOCK_KEY: "BITRIX24_EVENTS",
@@ -95,6 +99,7 @@ vi.mock("@/lib/pau/preparation", () => ({
 
 import {
   generateEventReportFromTranscript,
+  updateEventParticipantActiveDecision,
   updateEventParticipantAttendance,
 } from "../src/lib/pau/dashboard";
 
@@ -140,6 +145,92 @@ describe("PAU dashboard attendance updates", () => {
       },
     });
     expect(result.attendanceMarked).toBe(true);
+  });
+
+  it("requires a comment when the team decides not to invite an active participant", async () => {
+    prismaMocks.eventParticipantFindFirst.mockResolvedValue(eventParticipant());
+
+    await expect(
+      updateEventParticipantActiveDecision({
+        eventId: "event-1",
+        participantId: "active-1",
+        decision: "DECLINED_BY_US",
+        comment: " ",
+      })
+    ).rejects.toThrow("Comment is required when declining an active participant");
+    expect(prismaMocks.eventParticipantUpdate).not.toHaveBeenCalled();
+  });
+
+  it("stores active participant decisions with an optional comment", async () => {
+    prismaMocks.eventParticipantFindFirst.mockResolvedValue(eventParticipant());
+    prismaMocks.eventParticipantUpdate.mockResolvedValue(
+      eventParticipant({
+        activeDecision: "DECLINED_BY_US",
+        activeDecisionComment: "Не подходит по индустрии.",
+      })
+    );
+
+    const result = await updateEventParticipantActiveDecision({
+      eventId: "event-1",
+      participantId: "active-1",
+      decision: "DECLINED_BY_US",
+      comment: " Не подходит по индустрии. ",
+    });
+
+    expect(prismaMocks.eventParticipantUpdate).toHaveBeenCalledWith({
+      where: { id: "active-1" },
+      data: {
+        activeDecision: "DECLINED_BY_US",
+        activeDecisionComment: "Не подходит по индустрии.",
+        attendanceMarked: false,
+        status: "REFUSED",
+        statusUpdatedAt: expect.any(Date),
+      },
+      include: {
+        briefs: { orderBy: { createdAt: "desc" } },
+      },
+    });
+    expect(result.activeDecision).toBe("DECLINED_BY_US");
+    expect(result.activeDecisionComment).toBe("Не подходит по индустрии.");
+  });
+
+  it("clears decline comments when the active decision changes to an invitation outcome", async () => {
+    prismaMocks.eventParticipantFindFirst.mockResolvedValue(
+      eventParticipant({
+        activeDecision: "DECLINED_BY_US",
+        activeDecisionComment: "Не подходит по индустрии.",
+      })
+    );
+    prismaMocks.eventParticipantUpdate.mockResolvedValue(
+      eventParticipant({
+        activeDecision: "INVITED_ATTENDED",
+        activeDecisionComment: null,
+        attendanceMarked: true,
+        status: "ATTENDED",
+      })
+    );
+
+    const result = await updateEventParticipantActiveDecision({
+      eventId: "event-1",
+      participantId: "active-1",
+      decision: "INVITED_ATTENDED",
+      comment: "Не подходит по индустрии.",
+    });
+
+    expect(prismaMocks.eventParticipantUpdate).toHaveBeenCalledWith({
+      where: { id: "active-1" },
+      data: {
+        activeDecision: "INVITED_ATTENDED",
+        activeDecisionComment: null,
+        attendanceMarked: true,
+        status: "ATTENDED",
+        statusUpdatedAt: expect.any(Date),
+      },
+      include: {
+        briefs: { orderBy: { createdAt: "desc" } },
+      },
+    });
+    expect(result.activeDecisionComment).toBeNull();
   });
 
   it("rejects manual attendance marks before the event is past", async () => {
@@ -209,6 +300,8 @@ function eventParticipant(overrides: Record<string, unknown> = {}) {
     matchedScore: null,
     matchRationale: null,
     attendanceMarked: false,
+    activeDecision: null,
+    activeDecisionComment: null,
     sourcePayload: null,
     statusUpdatedAt: null,
     createdAt: new Date("2026-05-01T10:00:00.000Z"),

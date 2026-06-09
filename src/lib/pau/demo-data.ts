@@ -156,6 +156,8 @@ export const demoSnapshot: PauWorkspaceSnapshot = {
           matchedScore: null,
           matchRationale: null,
           attendanceMarked: false,
+          activeDecision: null,
+          activeDecisionComment: null,
           briefSummary: "Гость с сильным предпринимательским контекстом.",
         },
         {
@@ -198,6 +200,8 @@ export const demoSnapshot: PauWorkspaceSnapshot = {
           matchedScore: 0.88,
           matchRationale: "Близкий B2B-контекст и опыт построения комьюнити.",
           attendanceMarked: false,
+          activeDecision: "INVITED_REFUSED",
+          activeDecisionComment: null,
           briefSummary: "Подсветить опыт роста через партнерства.",
         },
       ],

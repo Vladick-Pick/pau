@@ -155,14 +155,33 @@ describe("PAU preparation helpers", () => {
     ]);
   });
 
-  it("computes potential and active attendance conversion separately", () => {
+  it("computes potential conversion and active decision counts separately", () => {
     const summary = computeEventAttendanceSummary([
       { id: "p1", kind: "POTENTIAL", status: "INVITED", attendanceMarked: false },
       { id: "p2", kind: "POTENTIAL", status: "ATTENDED", attendanceMarked: false },
       { id: "p3", kind: "POTENTIAL", status: "UNKNOWN", attendanceMarked: false },
       { id: "a1", kind: "ACTIVE", status: "INVITED", attendanceMarked: false },
-      { id: "a2", kind: "ACTIVE", status: "ATTENDED", attendanceMarked: true },
-      { id: "a3", kind: "ACTIVE", status: "MISSED", attendanceMarked: true },
+      {
+        id: "a2",
+        kind: "ACTIVE",
+        status: "ATTENDED",
+        attendanceMarked: true,
+        activeDecision: "INVITED_ATTENDED",
+      },
+      {
+        id: "a3",
+        kind: "ACTIVE",
+        status: "REFUSED",
+        attendanceMarked: false,
+        activeDecision: "INVITED_REFUSED",
+      },
+      {
+        id: "a4",
+        kind: "ACTIVE",
+        status: "REFUSED",
+        attendanceMarked: false,
+        activeDecision: "DECLINED_BY_US",
+      },
     ]);
 
     expect(summary).toEqual({
@@ -172,11 +191,13 @@ describe("PAU preparation helpers", () => {
         conversion: 0.5,
       },
       active: {
-        invited: 3,
+        matched: 4,
+        pending: 1,
+        invited: 2,
         attended: 1,
-        marked: 2,
-        attendedConversion: 1 / 3,
-        markedConversion: 2 / 3,
+        invitedAttended: 1,
+        invitedRefused: 1,
+        declinedByUs: 1,
       },
     });
   });

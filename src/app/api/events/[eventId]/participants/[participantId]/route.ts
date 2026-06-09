@@ -1,11 +1,28 @@
 import { z } from "zod";
 
 import { requireApiRole } from "@/lib/api/auth";
-import { updateEventParticipantAttendance } from "@/lib/pau/dashboard";
+import {
+  updateEventParticipantActiveDecision,
+  updateEventParticipantAttendance,
+} from "@/lib/pau/dashboard";
 
-const attendancePatchSchema = z.object({
-  attendanceMarked: z.boolean(),
-});
+const activeDecisionSchema = z.enum([
+  "INVITED_ATTENDED",
+  "INVITED_REFUSED",
+  "DECLINED_BY_US",
+]);
+
+const participantPatchSchema = z.union([
+  z.object({
+    attendanceMarked: z.boolean(),
+  }).strict(),
+  z
+    .object({
+      activeDecision: activeDecisionSchema,
+      activeDecisionComment: z.string().optional().nullable(),
+    })
+    .strict(),
+]);
 
 export async function PATCH(
   request: Request,
@@ -18,12 +35,20 @@ export async function PATCH(
 
   try {
     const { eventId, participantId } = await context.params;
-    const body = attendancePatchSchema.parse(await request.json());
-    const participant = await updateEventParticipantAttendance({
-      eventId,
-      participantId,
-      attendanceMarked: body.attendanceMarked,
-    });
+    const body = participantPatchSchema.parse(await request.json());
+    const participant =
+      "activeDecision" in body
+        ? await updateEventParticipantActiveDecision({
+            eventId,
+            participantId,
+            decision: body.activeDecision,
+            comment: body.activeDecisionComment,
+          })
+        : await updateEventParticipantAttendance({
+            eventId,
+            participantId,
+            attendanceMarked: body.attendanceMarked,
+          });
 
     return Response.json({ participant });
   } catch (error) {

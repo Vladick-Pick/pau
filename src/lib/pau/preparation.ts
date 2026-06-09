@@ -41,6 +41,11 @@ export type AttendanceSummaryParticipant = {
   kind: PreparationParticipantKind;
   status?: string | null;
   attendanceMarked?: boolean | null;
+  activeDecision?:
+    | "INVITED_ATTENDED"
+    | "INVITED_REFUSED"
+    | "DECLINED_BY_US"
+    | null;
 };
 
 export type AttendanceSummary = {
@@ -50,11 +55,13 @@ export type AttendanceSummary = {
     conversion: number;
   };
   active: {
+    matched: number;
+    pending: number;
     invited: number;
     attended: number;
-    marked: number;
-    attendedConversion: number;
-    markedConversion: number;
+    invitedAttended: number;
+    invitedRefused: number;
+    declinedByUs: number;
   };
 };
 
@@ -169,11 +176,20 @@ export function computeEventAttendanceSummary(
   const active = participants.filter((participant) => participant.kind === "ACTIVE");
   const potentialInvited = potential.filter(wasInvited).length;
   const potentialAttended = potential.filter(wasAttended).length;
-  const activeInvited = active.filter(wasInvited).length;
-  const activeAttended = active.filter(wasAttended).length;
-  const activeMarked = active.filter((participant) =>
-    Boolean(participant.attendanceMarked)
+  const activeInvitedAttended = active.filter(
+    (participant) => participant.activeDecision === "INVITED_ATTENDED"
   ).length;
+  const activeInvitedRefused = active.filter(
+    (participant) => participant.activeDecision === "INVITED_REFUSED"
+  ).length;
+  const activeDeclinedByUs = active.filter(
+    (participant) => participant.activeDecision === "DECLINED_BY_US"
+  ).length;
+  const activePending =
+    active.length -
+    activeInvitedAttended -
+    activeInvitedRefused -
+    activeDeclinedByUs;
 
   return {
     potential: {
@@ -182,11 +198,13 @@ export function computeEventAttendanceSummary(
       conversion: ratio(potentialAttended, potentialInvited),
     },
     active: {
-      invited: activeInvited,
-      attended: activeAttended,
-      marked: activeMarked,
-      attendedConversion: ratio(activeAttended, activeInvited),
-      markedConversion: ratio(activeMarked, activeInvited),
+      matched: active.length,
+      pending: activePending,
+      invited: activeInvitedAttended + activeInvitedRefused,
+      attended: activeInvitedAttended,
+      invitedAttended: activeInvitedAttended,
+      invitedRefused: activeInvitedRefused,
+      declinedByUs: activeDeclinedByUs,
     },
   };
 }

@@ -51,6 +51,12 @@ enum EventParticipantStatus {
   UNKNOWN
 }
 
+enum ActiveParticipantDecision {
+  INVITED_ATTENDED
+  INVITED_REFUSED
+  DECLINED_BY_US
+}
+
 model Participant {
   id               String            @id @default(cuid())
   bitrixDealId     String?           @unique
@@ -145,6 +151,8 @@ model EventParticipant {
   matchedScore    Float?
   matchRationale  String?
   attendanceMarked Boolean                @default(false)
+  activeDecision  ActiveParticipantDecision?
+  activeDecisionComment String?
   sourcePayload   Json?
   statusUpdatedAt DateTime?
   createdAt       DateTime               @default(now())

@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -42,6 +44,20 @@ describe("auth session tokens", () => {
 
     await expect(
       verifySessionToken(`${token.slice(0, -1)}x`, {
+        secret,
+        now: new Date("2026-05-24T07:00:30.000Z"),
+      })
+    ).resolves.toBeNull();
+  });
+
+  it("rejects malformed session payloads without throwing", async () => {
+    const encodedPayload = Buffer.from("not-json", "utf8").toString("base64url");
+    const signature = createHmac("sha256", secret)
+      .update(encodedPayload)
+      .digest("base64url");
+
+    await expect(
+      verifySessionToken(`${encodedPayload}.${signature}`, {
         secret,
         now: new Date("2026-05-24T07:00:30.000Z"),
       })

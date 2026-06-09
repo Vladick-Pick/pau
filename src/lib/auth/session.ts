@@ -65,9 +65,12 @@ export async function verifySessionToken(
     return null;
   }
 
-  const parsed = payloadSchema.safeParse(
-    JSON.parse(base64UrlDecode(encodedPayload))
-  );
+  const payload = parseSessionPayload(encodedPayload);
+  if (!payload) {
+    return null;
+  }
+
+  const parsed = payloadSchema.safeParse(payload);
   if (!parsed.success) {
     return null;
   }
@@ -104,4 +107,12 @@ function base64UrlEncode(value: string): string {
 
 function base64UrlDecode(value: string): string {
   return Buffer.from(value, "base64url").toString("utf8");
+}
+
+function parseSessionPayload(encodedPayload: string): unknown {
+  try {
+    return JSON.parse(base64UrlDecode(encodedPayload));
+  } catch {
+    return null;
+  }
 }
