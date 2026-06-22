@@ -19,20 +19,24 @@ export const DEFAULT_ACTIVE_RULES: ActiveRuleDefault[] = [
   {
     key: "retention",
     label: "Расчётный retention",
+    description:
+      "Желательно от 70% и выше. Выключено по умолчанию: факт пока не материализован в API. Включить, когда API начнёт его отдавать.",
     type: "MIN_PERCENT",
     factKey: "retention",
     config: { min: 70 },
-    enabled: true,
+    enabled: false,
     optional: false,
     sortOrder: 1,
   },
   {
     key: "attendance",
     label: "Доходимость",
+    description:
+      "Реально ходит на встречи. Выключено по умолчанию: факт пока не материализован в API. Включить, когда API начнёт его отдавать.",
     type: "MIN_PERCENT",
     factKey: "attendance",
     config: { min: 70 },
-    enabled: true,
+    enabled: false,
     optional: false,
     sortOrder: 2,
   },

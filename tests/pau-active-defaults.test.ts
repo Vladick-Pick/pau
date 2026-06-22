@@ -36,6 +36,16 @@ describe("DEFAULT_ACTIVE_RULES", () => {
     expect(activity?.optional).toBe(true);
   });
 
+  it("retention and attendance are disabled until the API materializes those facts", () => {
+    const byKey = Object.fromEntries(DEFAULT_ACTIVE_RULES.map((r) => [r.key, r]));
+
+    expect(byKey["retention"].enabled).toBe(false);
+    expect(byKey["attendance"].enabled).toBe(false);
+    // tenure + payment ARE computable from real data, so they stay on.
+    expect(byKey["tenure"].enabled).toBe(true);
+    expect(byKey["payment"].enabled).toBe(true);
+  });
+
   it("has no rule with key 'business'", () => {
     const keys = DEFAULT_ACTIVE_RULES.map((r) => r.key);
 
