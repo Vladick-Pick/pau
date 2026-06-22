@@ -263,3 +263,108 @@ model BitrixAutoSyncCursor {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+model Club {
+  id        String   @id            // = Profile workspace_id, e.g. "ws_cf1"
+  name      String
+  createdAt DateTime @default(now())
+  rules            ActiveRule[]
+  roles            ActiveRole[]
+  formatReadiness  FormatReadiness[]
+  notes            ParticipantNote[]
+  members          MemberProfile[]
+}
+
+model MemberProfile {
+  id            String    @id @default(cuid())
+  clubId        String
+  club          Club      @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  profileId     String
+  displayName   String?
+  stateCode     String?
+  tenureYear    Int?
+  paymentPhase  String?
+  businessBand  Int?
+  retention     Int?
+  attendance    Int?
+  dossier       Json
+  participation Json
+  profileUpdatedAt DateTime?
+  syncedAt      DateTime  @updatedAt
+  @@unique([clubId, profileId])
+  @@index([clubId])
+}
+
+enum ActiveRuleType {
+  MIN_YEAR
+  MIN_PERCENT
+  PHASE
+  MIN_BAND
+  HAS_ROLE
+}
+
+model ActiveRule {
+  id          String         @id @default(cuid())
+  clubId      String
+  club        Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  key         String
+  label       String
+  description String?
+  type        ActiveRuleType
+  factKey     String?
+  config      Json
+  enabled     Boolean        @default(true)
+  optional    Boolean        @default(false)
+  sortOrder   Int            @default(0)
+  @@unique([clubId, key])
+  @@index([clubId])
+}
+
+model ActiveRole {
+  id          String                 @id @default(cuid())
+  clubId      String
+  club        Club                   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  assignments ActiveRoleAssignment[]
+  @@unique([clubId, name])
+  @@index([clubId])
+}
+
+model ActiveRoleAssignment {
+  id        String     @id @default(cuid())
+  roleId    String
+  role      ActiveRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  profileId String
+  @@unique([roleId, profileId])
+  @@index([profileId])
+}
+
+enum ReadinessState {
+  READY
+  NOT_READY
+  UNMARKED
+}
+
+model FormatReadiness {
+  id        String         @id @default(cuid())
+  clubId    String
+  club      Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  profileId String
+  formatId  String
+  readiness ReadinessState @default(UNMARKED)
+  updatedAt DateTime       @updatedAt
+  @@unique([clubId, profileId, formatId])
+  @@index([clubId])
+}
+
+model ParticipantNote {
+  id        String   @id @default(cuid())
+  clubId    String
+  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  profileId String
+  note      String
+  updatedAt DateTime @updatedAt
+  @@unique([clubId, profileId])
+  @@index([clubId])
+}

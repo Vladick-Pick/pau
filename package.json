@@ -15,7 +15,8 @@
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "db:up": "docker compose up -d",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "db:sync-profiles": "tsx scripts/sync-profiles.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

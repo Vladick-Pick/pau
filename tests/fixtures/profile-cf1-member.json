@@ -1,0 +1,18 @@
+{
+  "person_id": "person_test",
+  "workspace_id": "ws_cf1",
+  "display_name": "Цимбалюк Евгения Геннадьевна",
+  "identity": { "birth_date": { "date": "1979-02-14T03:00:00+03:00" }, "name": { "first_name": "Евгения", "last_name": "Цимбалюк", "full_name": "Цимбалюк Евгения Геннадьевна" } },
+  "demographics": { "ages": [ { "age": 46 } ] },
+  "locations": [ { "city": { "name": "Москва" } } ],
+  "business": { "companies": [ { "company": "ООО Смарт Питание", "revenue": "0", "employee_count": "EMPLOYEES_1", "industries": [ { "name": "OTHER", "display_name": "Еда и питание" } ] } ] },
+  "business_experience": [ { "company": "ООО Смарт Питание", "position": "Владелец", "description": "Корпоративное питание" } ],
+  "community": { "attendance": { "events": [], "forums": [ { "attended_at": "2026-12-17T03:00:00+03:00", "calendar_year": 2026, "membership_year": 2, "name": "Посещение В7 Ф19 МСК" }, { "attended_at": "2025-11-10T03:00:00+03:00", "calendar_year": 2025, "membership_year": 1, "name": "Посещение Ф12" } ] } },
+  "membership": { "deals": [ { "begin_at": "2024-07-09T03:00:00+03:00", "close_at": "2026-01-17T03:00:00+03:00", "closed": true, "category_id": "2" } ] },
+  "crm": { "lifecycle_events": [ { "event_type": "next_renewal", "event_date": "2027-01-17T03:00:00+03:00", "label": "Дата следующего продления" }, { "event_type": "membership_ends", "event_date": "2026-01-16T03:00:00+03:00", "label": "Окончание членства" } ] },
+  "profile_text": { "can_be_useful": "Экспертиза в финансах и общепите. Коучинг.", "club_goals": "Интегрироваться в форум-группу, взять на модерацию.", "company_role": "Совладелец Cafetera Group." },
+  "requests_resources": { "interests": [ { "text": "Путешествия. Сквош. Биохакинг." } ] },
+  "hobbies": [ { "display_name": "Обучение" } ],
+  "social_profiles": [ { "network": "telegram", "username": "@Zhenya_Tsimbalyuk" } ],
+  "contact_channels": [ { "channel": "telegram", "external_id": "307621139" } ]
+}

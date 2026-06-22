@@ -1,0 +1,5 @@
+[
+  { "id": "be1", "event_type": "community.forum_attended", "event_type_label": "Посещение форума", "category": "community", "title": "Посещение: Ф19", "happened_at": "2026-12-17T03:00:00+03:00", "observed_at": "2026-06-22T05:43:46Z", "current_value": { "event_name": "Форум В7 Ф19", "city": "Москва" }, "attributes": {} },
+  { "id": "be2", "event_type": "membership.payment", "category": "membership", "title": "Оплата", "happened_at": "2024-07-09T03:00:00+03:00", "observed_at": "2024-07-10T00:00:00Z", "current_value": {}, "attributes": {} },
+  { "id": "be3", "event_type": "community.forum_attended", "event_type_label": "Посещение форума", "category": "community", "title": "Посещение: Ф12", "happened_at": "2025-11-10T03:00:00+03:00", "observed_at": "2025-11-11T00:00:00Z", "current_value": { "event_name": "Форум Ф12" }, "attributes": {} }
+]
