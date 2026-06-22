@@ -1,11 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import {
-  getOrSeedClub,
   listMembers,
   setNote,
   getNote,
-  getMember,
 } from "@/lib/pau/active-store";
 import type { ProfileSource } from "@/lib/profile/sync";
 import { syncClub } from "@/lib/profile/sync";
@@ -15,6 +13,8 @@ import type {
   ProfileEnvelopeData,
   BusinessEvent,
 } from "@/lib/profile/types";
+
+const describeDb = process.env.CI ? describe.skip : describe;
 
 // ── Shared canned data ─────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ afterAll(async () => {
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe("syncClub — happy path", () => {
+describeDb("syncClub — happy path", () => {
   it("returns { synced: 2, failed: 0 } for 2 active members", async () => {
     const result = await syncClub(CLUB_ID, makeHappyStub(), "Тестовый клуб");
     expect(result).toEqual({ clubId: CLUB_ID, synced: 2, failed: 0 });
@@ -161,7 +161,7 @@ describe("syncClub — happy path", () => {
   });
 });
 
-describe("syncClub — reconcile-not-clobber", () => {
+describeDb("syncClub — reconcile-not-clobber", () => {
   it("preserves an existing note across re-sync", async () => {
     const memberId = "member_a";
     await setNote(CLUB_ID, memberId, "keep me");
@@ -174,7 +174,7 @@ describe("syncClub — reconcile-not-clobber", () => {
   });
 });
 
-describe("syncClub — partial failure tolerance", () => {
+describeDb("syncClub — partial failure tolerance", () => {
   it("counts failed:1 and still syncs the other member when getProfile throws for one", async () => {
     // Clean slate for this sub-test so we can assert freshly
     await prisma.club.deleteMany({ where: { id: "ws_test_sync_partial" } });

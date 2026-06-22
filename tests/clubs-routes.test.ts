@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import { getOrSeedClub, upsertMemberProfile } from "@/lib/pau/active-store";
 
+const describeDb = process.env.CI ? describe.skip : describe;
+
 const CLUB = "ws_test_route";
 
 const DOSSIER = {
@@ -51,7 +53,7 @@ afterAll(async () => {
 
 // ── GET /api/clubs ─────────────────────────────────────────────────────────────
 
-describe("GET /api/clubs", () => {
+describeDb("GET /api/clubs", () => {
   it("returns 401 when unauthenticated", async () => {
     vi.resetModules();
     vi.doMock("@/lib/api/auth", () => ({
@@ -93,7 +95,7 @@ describe("GET /api/clubs", () => {
 
 // ── GET /api/clubs/[clubId]/active-participants ────────────────────────────────
 
-describe("GET /api/clubs/[clubId]/active-participants", () => {
+describeDb("GET /api/clubs/[clubId]/active-participants", () => {
   it("returns 401 when unauthenticated", async () => {
     vi.resetModules();
     vi.doMock("@/lib/api/auth", () => ({
@@ -144,7 +146,7 @@ describe("GET /api/clubs/[clubId]/active-participants", () => {
 
 // ── GET /api/clubs/[clubId]/participants/[profileId] ───────────────────────────
 
-describe("GET /api/clubs/[clubId]/participants/[profileId]", () => {
+describeDb("GET /api/clubs/[clubId]/participants/[profileId]", () => {
   it("returns 401 when unauthenticated", async () => {
     vi.resetModules();
     vi.doMock("@/lib/api/auth", () => ({

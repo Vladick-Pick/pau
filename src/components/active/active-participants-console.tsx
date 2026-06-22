@@ -459,7 +459,7 @@ export function ActiveParticipantsConsole({
         // ignore
       }
     },
-    [state.selectedClubId, state.selectedProfileId, loadClubData]
+    [state.selectedClubId, state.selectedProfileId]
   );
 
   const selectedClub = useMemo(

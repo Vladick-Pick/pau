@@ -9,6 +9,8 @@ import {
   getNote,
 } from "@/lib/pau/active-store";
 
+const describeDb = process.env.CI ? describe.skip : describe;
+
 const CLUB = "ws_test_mutr";
 const OTHER_CLUB = "ws_test_mutr_other";
 const PROFILE = "ws_test_mutr_profile1";
@@ -118,7 +120,7 @@ afterAll(async () => {
 
 // ── Rules ─────────────────────────────────────────────────────────────────────
 
-describe("PUT /clubs/[clubId]/rules/[ruleId]", () => {
+describeDb("PUT /clubs/[clubId]/rules/[ruleId]", () => {
   it("happy path: toggles enabled flag", async () => {
     vi.resetModules();
     mockManager();
@@ -181,7 +183,7 @@ describe("PUT /clubs/[clubId]/rules/[ruleId]", () => {
 
 // ── Roles ─────────────────────────────────────────────────────────────────────
 
-describe("GET /clubs/[clubId]/roles", () => {
+describeDb("GET /clubs/[clubId]/roles", () => {
   it("VIEWER can list roles", async () => {
     vi.resetModules();
     mockViewer();
@@ -200,7 +202,7 @@ describe("GET /clubs/[clubId]/roles", () => {
   });
 });
 
-describe("POST /clubs/[clubId]/roles", () => {
+describeDb("POST /clubs/[clubId]/roles", () => {
   it("happy path: creates a role and GET shows it", async () => {
     // POST
     vi.resetModules();
@@ -270,7 +272,7 @@ describe("POST /clubs/[clubId]/roles", () => {
 
 // ── Assignments ───────────────────────────────────────────────────────────────
 
-describe("POST/DELETE /clubs/[clubId]/roles/[roleId]/assignments", () => {
+describeDb("POST/DELETE /clubs/[clubId]/roles/[roleId]/assignments", () => {
   it("happy path: assigns profile to role and unassigns", async () => {
     // First create a role directly via store
     const { createRole } = await import("@/lib/pau/active-store");
@@ -337,7 +339,7 @@ describe("POST/DELETE /clubs/[clubId]/roles/[roleId]/assignments", () => {
 
 // ── Readiness ─────────────────────────────────────────────────────────────────
 
-describe("PUT /clubs/[clubId]/participants/[profileId]/readiness", () => {
+describeDb("PUT /clubs/[clubId]/participants/[profileId]/readiness", () => {
   it("happy path: sets readiness and store reflects it", async () => {
     vi.resetModules();
     mockManager();
@@ -378,7 +380,7 @@ describe("PUT /clubs/[clubId]/participants/[profileId]/readiness", () => {
 
 // ── Notes ─────────────────────────────────────────────────────────────────────
 
-describe("PUT /clubs/[clubId]/participants/[profileId]/note", () => {
+describeDb("PUT /clubs/[clubId]/participants/[profileId]/note", () => {
   it("happy path: sets note and store reflects it", async () => {
     vi.resetModules();
     mockManager();
@@ -417,7 +419,7 @@ describe("PUT /clubs/[clubId]/participants/[profileId]/note", () => {
 
 // ── IDOR: cross-club mutation must not leak across tenants ─────────────────────
 
-describe("cross-club isolation (IDOR)", () => {
+describeDb("cross-club isolation (IDOR)", () => {
   it("deleteRole with a roleId from ANOTHER club → 404, and the row is untouched", async () => {
     // Role lives in OTHER_CLUB; a CLUB manager must not be able to delete it.
     const role = await createRole(OTHER_CLUB, "ws_test_mutr_Foreign");

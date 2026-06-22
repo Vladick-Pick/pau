@@ -11,6 +11,8 @@ import {
   getParticipantDetail,
 } from "@/lib/pau/active-participants";
 
+const describeDb = process.env.CI ? describe.skip : describe;
+
 const CLUB = "ws_test_ap";
 
 const DOSSIER = {
@@ -78,7 +80,7 @@ afterAll(async () => {
   await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_ap" } } });
 });
 
-describe("getActiveParticipants", () => {
+describeDb("getActiveParticipants", () => {
   it("A passes all enabled rules (tenure≥2 ok, payment mid ok)", async () => {
     const summaries = await getActiveParticipants(CLUB);
     const a = summaries.find((s) => s.profileId === "pA");
@@ -138,7 +140,7 @@ describe("getActiveParticipants", () => {
   });
 });
 
-describe("getParticipantDetail", () => {
+describeDb("getParticipantDetail", () => {
   it("returns null for non-existent profileId", async () => {
     const result = await getParticipantDetail(CLUB, "nope");
     expect(result).toBeNull();

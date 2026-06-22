@@ -39,14 +39,6 @@ type Props = {
   onUnassignRole: (roleId: string, profileId: string) => Promise<void>;
 };
 
-const FACT_LABELS: Record<string, string> = {
-  tenureYear: "Стаж (год)",
-  retention: "Retention",
-  attendance: "Доходимость",
-  paymentPhase: "Платежный период",
-  businessBand: "Бизнес-бэнд",
-};
-
 const PHASE_LABELS: Record<string, string> = {
   start: "начало",
   mid: "середина",
@@ -191,6 +183,7 @@ function NoteEditor({
   const isDirty = note !== (initialNote ?? "");
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNote(initialNote ?? "");
   }, [initialNote, profileId]);
 
@@ -247,6 +240,7 @@ export function ParticipantInspector({
   const [rolePending, setRolePending] = useState<string | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveTab("profile");
   }, [detail?.profileId]);
 

@@ -104,7 +104,7 @@ export function RulesPanel({ canManage, clubId, rules, onToggle }: Props) {
               {canManage ? (
                 <button
                   aria-label={rule.enabled ? "Выключить правило" : "Включить правило"}
-                  aria-pressed={rule.enabled}
+                  aria-checked={rule.enabled}
                   className={cn(
                     "relative inline-flex h-[19px] w-[34px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
                     rule.enabled ? "bg-primary" : "bg-foreground/20"

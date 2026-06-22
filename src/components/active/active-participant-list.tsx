@@ -206,7 +206,7 @@ export function ActiveParticipantList({
     });
 
     return list;
-  }, [participants, roles, statusFilter, sortBy, query, roleMap]);
+  }, [participants, statusFilter, sortBy, query, roleMap]);
 
   return (
     <div className="flex flex-col gap-3">

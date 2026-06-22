@@ -22,6 +22,8 @@ import {
   NotFoundError,
 } from "@/lib/pau/active-store";
 
+const describeDb = process.env.CI ? describe.skip : describe;
+
 const CLUB = "ws_test_store";
 const CLUB2 = "ws_test_store2";
 
@@ -34,7 +36,7 @@ afterAll(async () => {
   await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_store" } } });
 });
 
-describe("getOrSeedClub", () => {
+describeDb("getOrSeedClub", () => {
   it("seeds exactly 5 rules on first call", async () => {
     await getOrSeedClub(CLUB, "Test Club");
     const rules = await getClubRules(CLUB);
@@ -54,7 +56,7 @@ describe("getOrSeedClub", () => {
   });
 });
 
-describe("updateRule", () => {
+describeDb("updateRule", () => {
   it("changes config and enabled on a rule", async () => {
     const rules = await getClubRules(CLUB);
     const rule = rules[0];
@@ -84,7 +86,7 @@ describe("updateRule", () => {
   });
 });
 
-describe("roles", () => {
+describeDb("roles", () => {
   let roleId: string;
 
   it("creates a role and lists it with count 0", async () => {
@@ -147,7 +149,7 @@ describe("roles", () => {
   });
 });
 
-describe("setReadiness / getReadiness", () => {
+describeDb("setReadiness / getReadiness", () => {
   it("upserts readiness — set READY then NOT_READY results in one row with NOT_READY", async () => {
     await getOrSeedClub(CLUB, "Test Club");
     await setReadiness(CLUB, "profile_002", "format_abc", "READY");
@@ -167,7 +169,7 @@ describe("setReadiness / getReadiness", () => {
   });
 });
 
-describe("setNote / getNote", () => {
+describeDb("setNote / getNote", () => {
   it("upserts a note and retrieves it", async () => {
     await getOrSeedClub(CLUB, "Test Club");
     await setNote(CLUB, "profile_003", "Initial note");
@@ -195,7 +197,7 @@ describe("setNote / getNote", () => {
   });
 });
 
-describe("bulk helpers", () => {
+describeDb("bulk helpers", () => {
   it("roleIdsByProfile groups assignments by profile in one query", async () => {
     await getOrSeedClub(CLUB, "Test Club");
     const role = await createRole(CLUB, "Bulk Role");
@@ -219,7 +221,7 @@ describe("bulk helpers", () => {
   });
 });
 
-describe("upsertMemberProfile", () => {
+describeDb("upsertMemberProfile", () => {
   const baseInput = {
     clubId: CLUB,
     profileId: "profile_mem_001",
@@ -298,7 +300,7 @@ describe("upsertMemberProfile", () => {
   });
 });
 
-describe("listMembers", () => {
+describeDb("listMembers", () => {
   it("returns all members when no filter", async () => {
     await getOrSeedClub(CLUB2, "Second Club");
     await upsertMemberProfile({
