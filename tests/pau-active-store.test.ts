@@ -24,11 +24,11 @@ const CLUB2 = "ws_test_store2";
 
 beforeAll(async () => {
   // Clean up any leftover state from a previous run
-  await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test" } } });
+  await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_store" } } });
 });
 
 afterAll(async () => {
-  await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test" } } });
+  await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_store" } } });
   await prisma.$disconnect();
 });
 

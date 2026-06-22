@@ -32,7 +32,7 @@ const PARTICIPATION = [
 
 beforeAll(async () => {
   // Clean up any leftover state
-  await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test" } } });
+  await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_ap" } } });
 
   // Seed club (seeds default rules: tenure+payment ENABLED, retention+attendance+activity DISABLED)
   await getOrSeedClub(CLUB, "Test");
@@ -75,7 +75,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test" } } });
+  await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_ap" } } });
   await prisma.$disconnect();
 });
 
