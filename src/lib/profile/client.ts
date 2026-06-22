@@ -66,7 +66,7 @@ export class ProfileApiClient {
   }
 
   async listWorkspaces(): Promise<Workspace[]> {
-    const envelope = await this.request<{ api_version: string; data: Workspace[] }>(
+    const envelope = await this.request<ApiItemEnvelope<Workspace[]>>(
       "/workspaces"
     );
     return envelope.data;
@@ -100,7 +100,7 @@ export class ProfileApiClient {
 
   async getProfile(id: string): Promise<ProfileEnvelopeData> {
     const envelope = await this.request<ApiItemEnvelope<ProfileEnvelopeData>>(
-      `/profiles/${id}`
+      `/profiles/${encodeURIComponent(id)}`
     );
     return envelope.data;
   }
@@ -110,7 +110,7 @@ export class ProfileApiClient {
     params?: ListEventsParams
   ): Promise<ApiListEnvelope<BusinessEvent>> {
     return this.request<ApiListEnvelope<BusinessEvent>>(
-      `/profiles/${id}/business-events`,
+      `/profiles/${encodeURIComponent(id)}/business-events`,
       buildEventsQuery(params ?? {})
     );
   }
@@ -208,6 +208,7 @@ export class ProfileApiClient {
       }
     }
 
+    // unreachable: loop always returns or throws; satisfies TS control-flow
     throw lastError;
   }
 }

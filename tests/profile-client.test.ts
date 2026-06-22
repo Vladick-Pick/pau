@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   ProfileApiClient,
@@ -166,6 +166,7 @@ describe("ProfileApiClient", () => {
       expect(result[1].id).toBe("p2");
       expect(calls).toHaveLength(2);
       expect(calls[1]).toContain("cursor=c2");
+      expect(calls[1]).toContain("workspace_id=ws_cf1");
     });
   });
 
@@ -365,14 +366,76 @@ describe("ProfileApiClient", () => {
         return res(envelope);
       });
 
-      const result = await client.collectBusinessEvents("p_abc");
+      const result = await client.collectBusinessEvents("p_abc", { eventType: ["meeting"] });
 
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe("e1");
       expect(result[1].id).toBe("e2");
       expect(calls).toHaveLength(2);
       expect(calls[1]).toContain("cursor=evCursor2");
+      expect(calls[1]).toContain("event_type=meeting");
       expect(calls[0]).toContain("/api/v1/profiles/p_abc/business-events");
+    });
+  });
+
+  describe("listBusinessEvents query params", () => {
+    it("serialises eventType array to repeated event_type keys", async () => {
+      const calls: string[] = [];
+
+      const client = makeClient(async (url) => {
+        calls.push(String(url));
+        const envelope: ApiListEnvelope<BusinessEvent> = {
+          api_version: "v1",
+          data: [],
+          pagination: { next_cursor: null, limit: 50 },
+        };
+        return res(envelope);
+      });
+
+      await client.listBusinessEvents("p_abc", {
+        eventType: ["meeting", "workshop"],
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toContain("event_type=meeting");
+      expect(calls[0]).toContain("event_type=workshop");
+    });
+  });
+
+  describe("createProfileClientFromEnv", () => {
+    let savedEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      savedEnv = { ...process.env };
+    });
+
+    afterEach(() => {
+      // Restore only the keys we touched
+      for (const key of ["PROFILE_API_TOKEN", "PROFILE_API_BASE_URL"]) {
+        if (key in savedEnv) {
+          process.env[key] = savedEnv[key];
+        } else {
+          delete process.env[key];
+        }
+      }
+    });
+
+    it("constructs a ProfileApiClient when PROFILE_API_TOKEN is set", async () => {
+      process.env["PROFILE_API_TOKEN"] = "env-test-token";
+      delete process.env["PROFILE_API_BASE_URL"];
+
+      const { createProfileClientFromEnv } = await import("@/lib/profile/client");
+      const client = createProfileClientFromEnv();
+
+      expect(client).toBeInstanceOf(ProfileApiClient);
+    });
+
+    it("throws when PROFILE_API_TOKEN is missing", async () => {
+      delete process.env["PROFILE_API_TOKEN"];
+
+      const { createProfileClientFromEnv } = await import("@/lib/profile/client");
+
+      expect(() => createProfileClientFromEnv()).toThrow("PROFILE_API_TOKEN");
     });
   });
 });
