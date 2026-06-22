@@ -6,7 +6,7 @@ import { updateRule } from "@/lib/pau/active-store";
 const rulePatchSchema = z
   .object({
     label: z.string().optional(),
-    config: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
     enabled: z.boolean().optional(),
   })
   .refine(
