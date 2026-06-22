@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ПАУ · Активные участники · редизайн</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Prototype-only font load. Production uses next/font Geist (src/app/globals.css). -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ----- Tokens mirrored 1:1 from src/app/globals.css ----- */
+      :root {
+        --background: oklch(0.99 0.004 106);
+        --foreground: oklch(0.19 0.02 248);
+        --card: oklch(1 0 0);
+        --card-foreground: var(--foreground);
+        --primary: oklch(0.33 0.08 248);
+        --primary-foreground: oklch(0.98 0.004 106);
+        --secondary: oklch(0.94 0.015 157);
+        --secondary-foreground: oklch(0.24 0.045 165);
+        --muted: oklch(0.95 0.006 248);
+        --muted-foreground: oklch(0.47 0.028 248);
+        --accent: oklch(0.94 0.02 76);
+        --accent-foreground: oklch(0.26 0.045 70);
+        --destructive: oklch(0.577 0.245 27.325);
+        --border: oklch(0.88 0.01 248);
+        --input: oklch(0.88 0.01 248);
+        --ring: oklch(0.64 0.1 248);
+        --chart-1: oklch(0.63 0.11 248);
+        --chart-2: oklch(0.64 0.1 160);
+        --chart-3: oklch(0.7 0.11 76);
+        --chart-4: oklch(0.57 0.13 25);
+        --chart-5: oklch(0.49 0.08 300);
+        --radius: 0.5rem;
+        --sidebar: oklch(0.97 0.006 248);
+      }
+      [data-theme="dark"] {
+        --background: oklch(0.16 0.018 248);
+        --foreground: oklch(0.96 0.005 106);
+        --card: oklch(0.2 0.02 248);
+        --primary: oklch(0.77 0.08 180);
+        --primary-foreground: oklch(0.16 0.018 248);
+        --secondary: oklch(0.25 0.035 165);
+        --secondary-foreground: oklch(0.92 0.03 160);
+        --muted: oklch(0.25 0.02 248);
+        --muted-foreground: oklch(0.72 0.025 248);
+        --accent: oklch(0.28 0.045 76);
+        --accent-foreground: oklch(0.93 0.04 85);
+        --destructive: oklch(0.704 0.191 22.216);
+        --border: oklch(0.32 0.02 248);
+        --input: oklch(0.32 0.02 248);
+        --ring: oklch(0.69 0.08 180);
+        --chart-1: oklch(0.77 0.08 180);
+        --chart-2: oklch(0.7 0.09 76);
+        --chart-3: oklch(0.62 0.13 25);
+        --chart-4: oklch(0.65 0.09 300);
+        --chart-5: oklch(0.72 0.06 248);
+        --sidebar: oklch(0.2 0.02 248);
+      }
+      :root,
+      [data-theme] {
+        --ok: var(--chart-2);
+        --warn: var(--chart-3);
+        --bad: var(--destructive);
+        --sunken: color-mix(in oklab, var(--muted) 60%, var(--background));
+        --hairline: color-mix(in oklab, var(--border) 80%, transparent);
+        --shadow-sm: 0 1px 2px color-mix(in oklab, var(--foreground) 8%, transparent);
+        --shadow-panel: 0 18px 48px -24px color-mix(in oklab, var(--primary) 30%, transparent);
+        --r-control: calc(var(--radius) * 0.8);
+        --r-card: calc(var(--radius) * 1.4);
+        --r-pill: 999px;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: "Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 14px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        transition: background 200ms ease, color 200ms ease;
+      }
+      button, input, select, textarea { font: inherit; color: inherit; }
+      button { cursor: pointer; }
+      h1, h2, h3, p { margin: 0; }
+      :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+      .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-feature-settings: "tnum" 1; }
+      .muted { color: var(--muted-foreground); }
+      svg.icon { width: 16px; height: 16px; flex: 0 0 auto; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+      .skip-link { position: absolute; left: 12px; top: -56px; z-index: 50; border-radius: var(--r-control); background: var(--primary); color: var(--primary-foreground); padding: 10px 14px; transition: top 160ms ease; }
+      .skip-link:focus { top: 12px; }
+
+      /* ----- Shell ----- */
+      .app { display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: 100dvh; }
+      .sidebar { position: sticky; top: 0; display: flex; height: 100dvh; flex-direction: column; gap: 4px; border-right: 1px solid var(--hairline); background: var(--sidebar); padding: 14px 12px; }
+      .brand { display: flex; align-items: center; gap: 11px; padding: 6px 8px 14px; }
+      .brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: var(--r-control); background: var(--primary); color: var(--primary-foreground); box-shadow: var(--shadow-sm); }
+      .brand-mark svg.icon { width: 18px; height: 18px; }
+      .brand-text { display: grid; gap: 1px; min-width: 0; }
+      .brand-text strong { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
+      .brand-text span { font-size: 11.5px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .nav-label { padding: 10px 10px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); }
+      .nav-item { display: flex; align-items: center; gap: 11px; width: 100%; border: 0; border-radius: var(--r-control); background: transparent; color: var(--foreground); padding: 9px 10px; text-align: left; font-weight: 500; transition: background 140ms ease; }
+      .nav-item .icon { color: var(--muted-foreground); transition: color 140ms ease; }
+      .nav-item:hover { background: color-mix(in oklab, var(--foreground) 5%, transparent); }
+      .nav-item.active { background: var(--card); font-weight: 600; box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--hairline); }
+      .nav-item.active .icon { color: var(--primary); }
+      .sidebar-footer { margin-top: auto; border-top: 1px solid var(--hairline); padding-top: 12px; }
+      .user-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; }
+
+      .main { min-width: 0; display: flex; flex-direction: column; }
+      .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; min-height: 60px; border-bottom: 1px solid var(--hairline); background: color-mix(in oklab, var(--background) 80%, transparent); backdrop-filter: blur(14px) saturate(150%); padding: 10px 22px; }
+      .topbar .ghost-icon { display: none; }
+      .topbar-title { flex: 1; min-width: 0; display: grid; gap: 1px; }
+      .topbar-title h1 { font-size: 16px; font-weight: 650; letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .topbar-title p { font-size: 12px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .content { display: grid; gap: 14px; padding: 18px 22px 40px; max-width: 1500px; width: 100%; }
+
+      /* ----- Buttons ----- */
+      .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--border); border-radius: var(--r-control); background: var(--card); color: var(--foreground); padding: 8px 12px; font-weight: 550; white-space: nowrap; transition: background 130ms ease, border-color 130ms ease, transform 80ms ease; }
+      .btn:hover { background: color-mix(in oklab, var(--foreground) 4%, var(--card)); border-color: color-mix(in oklab, var(--border) 60%, var(--foreground)); }
+      .btn:active { transform: translateY(1px); }
+      .btn.primary { border-color: transparent; background: var(--primary); color: var(--primary-foreground); box-shadow: var(--shadow-sm); }
+      .btn.primary:hover { background: color-mix(in oklab, var(--primary) 90%, var(--foreground)); }
+      .btn.icon-only { padding: 8px; }
+      .btn.sm { padding: 6px 9px; font-size: 12.5px; }
+
+      /* ----- Badges / chips ----- */
+      .badge { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--hairline); border-radius: var(--r-pill); background: color-mix(in oklab, var(--card) 70%, transparent); color: var(--muted-foreground); padding: 3px 9px; font-size: 11.5px; font-weight: 550; line-height: 1.35; white-space: nowrap; }
+      .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+      .badge.pass { border-color: color-mix(in oklab, var(--ok) 40%, var(--border)); background: color-mix(in oklab, var(--ok) 14%, var(--card)); color: color-mix(in oklab, var(--ok) 62%, var(--foreground)); }
+      .badge.warn { border-color: color-mix(in oklab, var(--warn) 52%, var(--border)); background: color-mix(in oklab, var(--warn) 18%, var(--card)); color: color-mix(in oklab, var(--warn) 56%, var(--foreground)); }
+      .badge.fail { border-color: color-mix(in oklab, var(--bad) 32%, var(--border)); background: color-mix(in oklab, var(--bad) 12%, var(--card)); color: color-mix(in oklab, var(--bad) 66%, var(--foreground)); }
+      .badge.neutral { background: var(--sunken); color: var(--muted-foreground); }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+      /* ----- Summary strip ----- */
+      .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+      .stat { display: grid; gap: 6px; border: 1px solid var(--hairline); border-radius: var(--r-card); background: var(--card); padding: 13px 15px; box-shadow: var(--shadow-sm); }
+      .stat .top { display: flex; align-items: center; justify-content: space-between; }
+      .stat .label { font-size: 12px; font-weight: 550; color: var(--muted-foreground); }
+      .stat .icn { display: grid; place-items: center; width: 27px; height: 27px; border-radius: var(--r-control); background: var(--sunken); color: var(--muted-foreground); }
+      .stat.accent .icn { background: color-mix(in oklab, var(--primary) 14%, var(--card)); color: var(--primary); }
+      .stat.good .icn { background: color-mix(in oklab, var(--ok) 16%, var(--card)); color: color-mix(in oklab, var(--ok) 66%, var(--foreground)); }
+      .stat.attn .icn { background: color-mix(in oklab, var(--warn) 20%, var(--card)); color: color-mix(in oklab, var(--warn) 58%, var(--foreground)); }
+      .stat .value { font-size: 27px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+      .stat .context { font-size: 11.5px; color: var(--muted-foreground); }
+
+      /* ----- Section bar + config ----- */
+      .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .section-bar h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.05em; color: var(--muted-foreground); text-transform: uppercase; }
+      .collapse-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hairline); border-radius: var(--r-pill); background: var(--card); color: var(--muted-foreground); padding: 5px 11px; font-size: 12px; font-weight: 550; }
+      .collapse-btn .icon { transition: transform 180ms ease; }
+      .config[hidden] { display: none; }
+      .config { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr); gap: 12px; align-items: start; }
+      .card { border: 1px solid var(--hairline); border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-sm); }
+      .config .card { padding: 14px; background: var(--sunken); }
+      .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+      .card-head h2 { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; text-transform: none; color: var(--foreground); }
+      .card-head p { margin-top: 2px; font-size: 12px; color: var(--muted-foreground); max-width: 52ch; }
+
+      .rule-grid { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 8px; }
+      .rule { display: grid; gap: 8px; border: 1px solid var(--hairline); border-radius: var(--r-control); background: var(--card); padding: 10px 11px; transition: opacity 130ms ease; }
+      .rule.off { opacity: 0.5; }
+      .rule-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .rule-name { width: 100%; border: 0; background: transparent; font-size: 13px; font-weight: 600; padding: 0; }
+      .rule p { font-size: 11.5px; color: var(--muted-foreground); }
+      .rule-foot { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+      .crit { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted-foreground); }
+      .crit input[type="number"] { width: 52px; border: 1px solid var(--input); border-radius: 6px; background: var(--background); padding: 4px 6px; text-align: center; }
+      .crit select { border: 1px solid var(--input); border-radius: 6px; background: var(--background); padding: 4px 6px; }
+      .switch { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+      .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+      .switch .track { width: 34px; height: 19px; border-radius: 999px; background: color-mix(in oklab, var(--foreground) 22%, transparent); transition: background 140ms ease; position: relative; }
+      .switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--card); box-shadow: var(--shadow-sm); transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+      .switch input:checked + .track { background: var(--primary); }
+      .switch input:checked + .track::after { transform: translateX(15px); }
+      .switch input:focus-visible + .track { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+      .role-list { margin-top: 12px; display: grid; gap: 8px; }
+      .role { display: grid; gap: 4px; border: 1px solid var(--hairline); border-radius: var(--r-control); background: var(--card); padding: 10px 11px; }
+      .role-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .role-top strong { font-size: 13px; font-weight: 600; }
+      .role p { font-size: 11.5px; color: var(--muted-foreground); }
+      .add-role { margin-top: 10px; display: grid; gap: 7px; }
+      .input { width: 100%; border: 1px solid var(--input); border-radius: var(--r-control); background: var(--background); padding: 9px 11px; transition: border-color 130ms ease, box-shadow 130ms ease; }
+      .input::placeholder { color: color-mix(in oklab, var(--muted-foreground) 90%, transparent); }
+      .input:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 22%, transparent); }
+
+      /* ----- Toolbar ----- */
+      .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; }
+      .toolbar-left, .toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+      .segmented { display: inline-flex; gap: 2px; border: 1px solid var(--hairline); border-radius: var(--r-control); background: var(--sunken); padding: 3px; }
+      .segmented button { border: 0; border-radius: calc(var(--r-control) - 2px); background: transparent; color: var(--muted-foreground); padding: 6px 11px; font-size: 12.5px; font-weight: 550; white-space: nowrap; transition: background 130ms ease, color 130ms ease, box-shadow 130ms ease; }
+      .segmented button:hover { color: var(--foreground); }
+      .segmented button.active { background: var(--card); color: var(--foreground); box-shadow: var(--shadow-sm); }
+      .search { position: relative; display: inline-flex; align-items: center; min-width: min(300px, 100%); flex: 1 1 220px; }
+      .search .icon { position: absolute; left: 11px; color: var(--muted-foreground); pointer-events: none; }
+      .search input { width: 100%; padding-left: 34px; }
+      .select { border: 1px solid var(--input); border-radius: var(--r-control); background: var(--card); padding: 8px 10px; font-weight: 550; }
+
+      /* ----- Workspace ----- */
+      .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 396px; gap: 14px; align-items: start; }
+      .list-card { overflow: hidden; border: 1px solid var(--hairline); border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-sm); }
+      .list-head { display: grid; grid-template-columns: minmax(230px, 1.5fr) minmax(220px, 1.4fr) minmax(140px, 0.8fr); gap: 16px; align-items: center; border-bottom: 1px solid var(--hairline); background: var(--sunken); padding: 10px 16px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
+
+      .row { display: grid; grid-template-columns: minmax(230px, 1.5fr) minmax(220px, 1.4fr) minmax(140px, 0.8fr); gap: 16px; align-items: center; width: 100%; border: 0; border-bottom: 1px solid var(--hairline); background: transparent; color: inherit; padding: 14px 16px; text-align: left; position: relative; transition: background 130ms ease; }
+      .row::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: transparent; transition: background 130ms ease; }
+      .row:last-child { border-bottom: 0; }
+      .row:hover { background: color-mix(in oklab, var(--foreground) 3.5%, transparent); }
+      .row.selected { background: color-mix(in oklab, var(--primary) 7%, var(--card)); }
+      .row.selected::before { background: var(--primary); }
+
+      .identity { display: flex; gap: 12px; min-width: 0; }
+      .avatar { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; border-radius: var(--r-control); background: color-mix(in oklab, var(--av, var(--primary)) 18%, var(--card)); color: color-mix(in oklab, var(--av, var(--primary)) 70%, var(--foreground)); font-weight: 650; font-size: 13px; }
+      .identity-main { display: grid; gap: 3px; min-width: 0; }
+      .identity-main .name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+      .identity-main .sub { font-size: 12px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .identity-main .meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+
+      .assess { display: grid; gap: 7px; min-width: 0; }
+      .status { display: inline-flex; align-items: center; gap: 6px; width: fit-content; border-radius: var(--r-pill); padding: 4px 10px; font-size: 12px; font-weight: 600; }
+      .status.active { background: color-mix(in oklab, var(--ok) 16%, var(--card)); color: color-mix(in oklab, var(--ok) 60%, var(--foreground)); border: 1px solid color-mix(in oklab, var(--ok) 38%, var(--border)); }
+      .status.inactive { background: color-mix(in oklab, var(--warn) 18%, var(--card)); color: color-mix(in oklab, var(--warn) 54%, var(--foreground)); border: 1px solid color-mix(in oklab, var(--warn) 48%, var(--border)); }
+      .status .icon { width: 14px; height: 14px; }
+      .factline { font-size: 12px; color: var(--muted-foreground); }
+      .factline b { font-weight: 600; color: color-mix(in oklab, var(--foreground) 78%, var(--muted-foreground)); }
+      .reasons { display: flex; flex-wrap: wrap; gap: 5px; }
+
+      .formats-cell { display: grid; gap: 5px; align-content: start; }
+      .fmt { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--muted-foreground); }
+      .fmt .pip { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+      .fmt .pip.ready { background: var(--ok); }
+      .fmt .pip.no { background: var(--bad); }
+      .fmt .pip.unmarked { background: transparent; border: 1.5px solid color-mix(in oklab, var(--muted-foreground) 55%, transparent); }
+
+      /* ----- Skeleton + empty ----- */
+      .skeleton-row { display: grid; grid-template-columns: minmax(230px, 1.5fr) minmax(220px, 1.4fr) minmax(140px, 0.8fr); gap: 16px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--hairline); }
+      .sk { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--sunken) 0%, color-mix(in oklab, var(--foreground) 7%, var(--sunken)) 50%, var(--sunken) 100%); background-size: 200% 100%; animation: shimmer 1.3s ease-in-out infinite; }
+      .sk.av { width: 38px; height: 38px; border-radius: var(--r-control); }
+      .sk.lg { width: 60%; height: 14px; }
+      .sk.sm { width: 82%; }
+      @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+      .empty { display: grid; justify-items: center; gap: 8px; padding: 54px 24px; text-align: center; color: var(--muted-foreground); }
+      .empty .icon { width: 28px; height: 28px; color: color-mix(in oklab, var(--muted-foreground) 70%, transparent); }
+
+      /* ----- Detail panel ----- */
+      .panel { position: sticky; top: 76px; border: 1px solid var(--hairline); border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
+      .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 16px 14px; }
+      .panel-head .who { display: flex; gap: 12px; min-width: 0; }
+      .panel-head .name { font-size: 16px; font-weight: 650; letter-spacing: -0.015em; }
+      .panel-head .sub { font-size: 12.5px; color: var(--muted-foreground); margin-top: 2px; }
+      .verdict { margin: 0 16px 14px; border-radius: var(--r-control); padding: 11px 12px; display: grid; gap: 6px; }
+      .verdict.active { background: color-mix(in oklab, var(--ok) 12%, var(--card)); border: 1px solid color-mix(in oklab, var(--ok) 34%, var(--border)); }
+      .verdict.inactive { background: color-mix(in oklab, var(--warn) 14%, var(--card)); border: 1px solid color-mix(in oklab, var(--warn) 42%, var(--border)); }
+      .verdict .head { display: inline-flex; align-items: center; gap: 7px; font-weight: 650; font-size: 13.5px; }
+      .verdict.active .head { color: color-mix(in oklab, var(--ok) 58%, var(--foreground)); }
+      .verdict.inactive .head { color: color-mix(in oklab, var(--warn) 52%, var(--foreground)); }
+      .verdict p { font-size: 12px; color: var(--muted-foreground); }
+
+      .tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--hairline); }
+      .tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted-foreground); padding: 10px; font-weight: 550; font-size: 13px; transition: color 130ms ease, border-color 130ms ease; }
+      .tab:hover { color: var(--foreground); }
+      .tab[aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--primary); }
+      .tab-body { padding: 4px 16px 16px; }
+      .tab-panel { display: none; gap: 16px; }
+      .tab-panel.active { display: grid; animation: fade 200ms ease; }
+      @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+      .block { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+      .block:first-child { border-top: 0; }
+      .block > h3 { font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted-foreground); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .block .src { font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted-foreground); display: inline-flex; align-items: center; gap: 4px; }
+
+      .facts { display: grid; gap: 2px; }
+      .fact { display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--hairline); }
+      .fact:last-child { border-bottom: 0; }
+      .fact .k { font-size: 12px; color: var(--muted-foreground); }
+      .fact .v { font-size: 13px; font-weight: 550; }
+      .fact .v small { font-weight: 400; color: var(--muted-foreground); }
+      .fact .mark { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; flex: 0 0 auto; }
+      .fact .mark.ok { background: color-mix(in oklab, var(--ok) 18%, var(--card)); color: color-mix(in oklab, var(--ok) 62%, var(--foreground)); }
+      .fact .mark.bad { background: color-mix(in oklab, var(--bad) 14%, var(--card)); color: color-mix(in oklab, var(--bad) 66%, var(--foreground)); }
+      .fact .mark.na { background: var(--sunken); color: var(--muted-foreground); }
+      .fact .mark .icon { width: 13px; height: 13px; }
+      .bar { height: 5px; border-radius: 999px; background: var(--sunken); overflow: hidden; margin-top: 5px; max-width: 150px; }
+      .bar > span { display: block; height: 100%; border-radius: inherit; width: 0; transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1); }
+      .bar.is-ok > span { background: var(--ok); }
+      .bar.is-bad > span { background: var(--bad); }
+
+      .info { display: grid; gap: 2px; }
+      .info-row { display: grid; gap: 3px; padding: 8px 0; border-bottom: 1px dashed var(--hairline); }
+      .info-row:last-child { border-bottom: 0; }
+      .info-row .k { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
+      .info-row .v { font-size: 13px; overflow-wrap: anywhere; }
+      .role-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid color-mix(in oklab, var(--ok) 40%, var(--border)); border-radius: var(--r-pill); background: color-mix(in oklab, var(--ok) 12%, var(--card)); color: color-mix(in oklab, var(--ok) 62%, var(--foreground)); padding: 4px 6px 4px 10px; font-size: 12px; font-weight: 550; }
+      .role-chip button { display: grid; place-items: center; width: 17px; height: 17px; border: 0; border-radius: 50%; background: color-mix(in oklab, var(--ok) 22%, transparent); color: inherit; font-size: 12px; line-height: 1; }
+      .field { display: grid; gap: 6px; }
+      .field label { font-size: 12px; font-weight: 550; color: var(--muted-foreground); }
+      textarea.input { min-height: 80px; resize: vertical; line-height: 1.5; }
+
+      .format-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--hairline); border-radius: var(--r-control); background: var(--sunken); padding: 9px 11px; }
+      .format-row .fmt-name { font-size: 13px; font-weight: 550; }
+      .format-row .fmt-state { font-size: 11px; margin-top: 2px; }
+      .seg-mini { display: inline-flex; gap: 2px; border: 1px solid var(--hairline); border-radius: var(--r-control); background: var(--card); padding: 2px; }
+      .seg-mini button { border: 0; border-radius: calc(var(--r-control) - 3px); background: transparent; color: var(--muted-foreground); padding: 4px 8px; font-size: 11.5px; font-weight: 550; }
+      .seg-mini button[aria-pressed="true"][data-v="ready"] { background: color-mix(in oklab, var(--ok) 18%, var(--card)); color: color-mix(in oklab, var(--ok) 64%, var(--foreground)); }
+      .seg-mini button[aria-pressed="true"][data-v="unmarked"] { background: var(--sunken); color: var(--foreground); }
+      .seg-mini button[aria-pressed="true"][data-v="no"] { background: color-mix(in oklab, var(--bad) 14%, var(--card)); color: color-mix(in oklab, var(--bad) 66%, var(--foreground)); }
+      .hint { font-size: 11.5px; color: var(--muted-foreground); display: flex; gap: 7px; align-items: flex-start; }
+      .hint .icon { width: 14px; height: 14px; margin-top: 1px; color: var(--primary); }
+
+      .timeline { display: grid; gap: 12px; }
+      .event { display: grid; gap: 3px; position: relative; padding-left: 18px; }
+      .event::before { content: ""; position: absolute; left: 0; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--card); border: 2px solid var(--primary); }
+      .event::after { content: ""; position: absolute; left: 4px; top: 16px; bottom: -12px; width: 1px; background: var(--hairline); }
+      .event:last-child::after { display: none; }
+      .event strong { font-size: 13px; font-weight: 600; }
+      .event .when { font-size: 11.5px; color: var(--muted-foreground); }
+      .event .what { font-size: 12px; }
+
+      /* ----- Responsive ----- */
+      @media (max-width: 1240px) {
+        .workspace { grid-template-columns: minmax(0, 1fr); }
+        .panel { position: static; }
+        .config { grid-template-columns: minmax(0, 1fr); }
+      }
+      @media (max-width: 920px) {
+        .app { grid-template-columns: 1fr; }
+        .sidebar { display: none; }
+        .topbar .ghost-icon { display: inline-flex; }
+        .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 720px) {
+        .list-head { display: none; }
+        .row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+        .content { padding: 16px 14px 36px; }
+        .fact { grid-template-columns: 110px minmax(0, 1fr) auto; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">К списку активных</a>
+
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-users" viewBox="0 0 24 24"><path d="M18 21a8 8 0 0 0-16 0" /><circle cx="10" cy="8" r="5" /><path d="M22 20c0-3.37-2-6.2-4.8-7.42" /><path d="M16 3.13a5 5 0 0 1 0 9.74" /></symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4" /><path d="M16 2v4" /><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18" /></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="4" x2="4" y1="21" y2="14" /><line x1="4" x2="4" y1="10" y2="3" /><line x1="12" x2="12" y1="21" y2="12" /><line x1="12" x2="12" y1="8" y2="3" /><line x1="20" x2="20" y1="21" y2="16" /><line x1="20" x2="20" y1="12" y2="3" /><line x1="2" x2="6" y1="14" y2="14" /><line x1="10" x2="14" y1="8" y2="8" /><line x1="18" x2="22" y1="16" y2="16" /></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 3v6h6" /><path d="M12 7v5l4 2" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h16" /></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M3 21v-5h5" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="M9.94 14.34A6 6 0 1 1 12 3a6 6 0 0 1 2.06 11.34" /><path d="M12 15v7" /><path d="m9 19 3 3 3-3" /></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14" /><path d="M12 5v14" /></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></symbol>
+      <symbol id="i-profile" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5" /><path d="M20 21a8 8 0 0 0-16 0" /></symbol>
+    </svg>
+
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark"><svg class="icon"><use href="#i-users" /></svg></div>
+          <div class="brand-text"><strong>ПАУ</strong><span>Программа активных участников</span></div>
+        </div>
+        <nav aria-label="Разделы">
+          <div class="nav-label">Меню</div>
+          <button class="nav-item" type="button"><svg class="icon"><use href="#i-calendar" /></svg><span>Подготовка</span></button>
+          <button class="nav-item active" type="button" aria-current="page"><svg class="icon"><use href="#i-users" /></svg><span>Участники</span></button>
+          <button class="nav-item" type="button"><svg class="icon"><use href="#i-sliders" /></svg><span>Форматы</span></button>
+          <button class="nav-item" type="button"><svg class="icon"><use href="#i-history" /></svg><span>История</span></button>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="user-row">
+            <div class="avatar" style="--av: var(--chart-1)">МР</div>
+            <div><div style="font-size: 12.5px; font-weight: 600">Марина Руднева</div><div class="muted" style="font-size: 11.5px">Менеджер клуба</div></div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <button class="btn icon-only ghost-icon" type="button" aria-label="Меню"><svg class="icon"><use href="#i-menu" /></svg></button>
+          <div class="topbar-title">
+            <h1>Активные участники</h1>
+            <p>Кто активен по правилам, в каких ролях и к каким форматам готов</p>
+          </div>
+          <button class="btn icon-only" type="button" id="theme-toggle" aria-label="Тема"><svg class="icon" id="theme-icon"><use href="#i-moon" /></svg></button>
+          <button class="btn sm" type="button" id="reset"><svg class="icon"><use href="#i-refresh" /></svg><span>Сбросить</span></button>
+        </header>
+
+        <main class="content">
+          <!-- Summary -->
+          <section class="summary" aria-label="Сводка">
+            <div class="stat accent"><div class="top"><span class="label">Размечено</span><span class="icn"><svg class="icon"><use href="#i-users" /></svg></span></div><div class="value mono" id="s-total">0</div><div class="context" id="s-total-ctx">по клубам</div></div>
+            <div class="stat good"><div class="top"><span class="label">Активны по правилам</span><span class="icn"><svg class="icon"><use href="#i-check" /></svg></span></div><div class="value mono" id="s-active">0</div><div class="context" id="s-active-ctx"></div></div>
+            <div class="stat"><div class="top"><span class="label">Готовы к гостевой</span><span class="icn"><svg class="icon"><use href="#i-spark" /></svg></span></div><div class="value mono" id="s-guest">0</div><div class="context">формат «Гостевая встреча»</div></div>
+            <div class="stat attn"><div class="top"><span class="label">Нужны факты</span><span class="icn"><svg class="icon"><use href="#i-help" /></svg></span></div><div class="value mono" id="s-gaps">0</div><div class="context">профиль неполный</div></div>
+          </section>
+
+          <!-- Config -->
+          <div class="section-bar">
+            <h2>Кто считается активным участником</h2>
+            <button class="collapse-btn" type="button" id="config-toggle" aria-expanded="false" aria-controls="config"><span id="config-label">Показать правила и роли</span><svg class="icon" id="config-chevron" style="transform: rotate(-90deg)"><use href="#i-chevron" /></svg></button>
+          </div>
+          <section class="config" id="config" aria-label="Правила и роли" hidden>
+            <div class="card">
+              <div class="card-head">
+                <div><h2>Правила активного участника</h2><p>Активный участник выводится из этих правил. Меняешь порог или выключаешь правило, и список пересчитывается сразу.</p></div>
+                <span class="badge neutral">из клубного профиля</span>
+              </div>
+              <div class="rule-grid" id="rules"></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><div><h2>Роли активных</h2><p>Справочник ролей. Назначаются активному участнику в его карточке.</p></div></div>
+              <div class="role-list" id="roles"></div>
+              <div class="add-role">
+                <input class="input" id="role-name" placeholder="Название роли" />
+                <input class="input" id="role-desc" placeholder="Короткое описание" />
+                <button class="btn primary" id="add-role" type="button"><svg class="icon"><use href="#i-plus" /></svg><span>Создать роль</span></button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Toolbar -->
+          <section class="toolbar" aria-label="Фильтры">
+            <div class="toolbar-left">
+              <div class="segmented" role="tablist" aria-label="Клуб">
+                <button class="active" type="button" data-club="all">Все клубы</button>
+                <button type="button" data-club="cf1">Club First One</button>
+                <button type="button" data-club="cff">Club First Future</button>
+              </div>
+              <div class="segmented" role="tablist" aria-label="Статус">
+                <button class="active" type="button" data-status="all">Все</button>
+                <button type="button" data-status="active">Активные</button>
+                <button type="button" data-status="inactive">Не активные</button>
+                <button type="button" data-status="gaps">Нужны факты</button>
+              </div>
+            </div>
+            <div class="toolbar-right">
+              <label class="search"><svg class="icon"><use href="#i-search" /></svg><input class="input" id="search" type="search" placeholder="Имя, бизнес, роль" aria-label="Поиск" /></label>
+              <select class="select" id="sort" aria-label="Сортировка">
+                <option value="status">Сначала активные</option>
+                <option value="name">По имени</option>
+                <option value="retention">По retention</option>
+              </select>
+            </div>
+          </section>
+
+          <!-- Workspace -->
+          <section class="workspace" id="workspace">
+            <div class="list-card">
+              <div class="list-head"><span>Участник</span><span>Активность по правилам</span><span>Готовность форматов</span></div>
+              <div id="list"></div>
+            </div>
+            <aside class="panel" id="panel" aria-label="Карточка участника"></aside>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      // ---------- Reference data ----------
+      const phaseLabels = { start: "начало периода", mid: "середина периода", end: "конец периода" };
+
+      // Rules are typed predicates over profile facts, editable by the manager.
+      const baseRules = [
+        { id: "tenure", label: "Стаж в клубе", desc: "От 2-го года, лучше от 3-го.", type: "min-year", min: 2, enabled: true },
+        { id: "retention", label: "Расчётный retention", desc: "Желательно от 70% и выше.", type: "min-pct", fact: "retention", min: 70, enabled: true },
+        { id: "attendance", label: "Доходимость", desc: "Реально ходит на встречи, высокая конверсия.", type: "min-pct", fact: "attendance", min: 70, enabled: true },
+        { id: "payment", label: "Платёжный год", desc: "В середине платёжного периода.", type: "phase", pass: "mid", enabled: true },
+        { id: "activity", label: "Клубная активность", desc: "Амбассадор, лидер направления или заметная роль. Усиливающее, необязательное правило.", type: "has-role", enabled: false, extra: true },
+      ];
+
+      const baseRoles = [
+        { id: "ambassador", name: "Амбассадор", description: "Представляет клуб и помогает раскрывать ценность участия." },
+        { id: "subclub_leader", name: "Лидер подклуба", description: "Ведёт тематическое или отраслевое направление." },
+        { id: "expert", name: "Эксперт", description: "Усиливает разборы и тематические встречи." },
+      ];
+
+      // Profile facts are materialized in the club profile (CONTEXT.md): ПАУ reads them.
+      const baseParticipants = [
+        {
+          id: "p1", name: "Алексей Морозов", initials: "АМ", av: "var(--chart-1)", club: "cf1", clubName: "Club First One",
+          company: "Морозов Консалтинг", position: "Основатель", city: "Москва", profileUrl: "profile://cf1/person/p1",
+          industry: "B2B-консалтинг, сервисный бизнес", revenue: "≈ 180 млн ₽ / год",
+          interests: "горные лыжи, бизнес-книги, менторство",
+          projects: "Упаковывает консалтинг во франшизу",
+          request: "Ищет сильные интро к собственникам сервисных компаний",
+          roles: ["ambassador"],
+          note: "Звать на гостевые, когда нужен доверительный предпринимательский разговор.",
+          facts: { tenure: 4, retention: 82, attendance: 80, paymentPhase: "mid" }, gaps: [],
+          formats: { guest: "ready", intro: "ready", group: "ready", expert: "unmarked", forum: "ready" },
+          participation: [["Май 2026", "Гостевая встреча", "Пришёл как активный участник"], ["Март 2026", "Рабочая группа", "Дал отраслевой кейс"]],
+          matching: [["22 мая", "Гостевая встреча", "Подобрали → пригласили → пришёл"], ["11 апреля", "Стыковка", "Подобрали, не пригласили: конфликт календаря"]],
+        },
+        {
+          id: "p2", name: "Мария Тихонова", initials: "МТ", av: "var(--chart-2)", club: "cf1", clubName: "Club First One",
+          company: "Tikhonova Legal", position: "Партнёр", city: "Санкт-Петербург", profileUrl: "profile://cf1/person/p2",
+          industry: "юридическая практика, сделки M&A", revenue: "≈ 95 млн ₽ / год",
+          interests: "классическая музыка, яхтинг, право в IT",
+          projects: "Развивает практику корпоративного права",
+          request: "Интересны экспертные форматы и разборы сделок",
+          roles: ["subclub_leader", "expert"],
+          note: "Лучше звать на экспертные и тематические форматы, гостевая точечно.",
+          facts: { tenure: 5, retention: 88, attendance: 84, paymentPhase: "mid" }, gaps: [],
+          formats: { guest: "unmarked", intro: "ready", group: "ready", expert: "ready", forum: "ready" },
+          participation: [["Июнь 2026", "Экспертный диалог", "Вела разбор вопросов"], ["Апрель 2026", "Форум", "Модерировала секцию"]],
+          matching: [["18 июня", "Экспертный диалог", "Подобрали → пригласили → пришла"], ["26 мая", "Гостевая встреча", "Подобрали → пригласили → не пришла"]],
+        },
+        {
+          id: "p3", name: "Игорь Романов", initials: "ИР", av: "var(--chart-3)", club: "cff", clubName: "Club First Future",
+          company: "Romanov Tech", position: "CEO", city: "Казань", profileUrl: "profile://cff/person/p3",
+          industry: "B2B SaaS", revenue: "≈ 320 млн ₽ / год",
+          interests: "триатлон, продуктовый дизайн, ИИ",
+          projects: "Масштабирует команду, выходит в СНГ",
+          request: "Ищет клиентов из enterprise и менторов по росту",
+          roles: [],
+          note: "Сильный бизнес, но доходимость пока слабая.",
+          facts: { tenure: 2, retention: 74, attendance: 45, paymentPhase: "mid" },
+          gaps: ["доходимость должна быть явным фактом профиля"],
+          formats: { guest: "unmarked", intro: "ready", group: "ready", expert: "unmarked", forum: "unmarked" },
+          participation: [["Май 2026", "Рабочая группа", "Участвовал в дискуссии"]],
+          matching: [["7 июня", "Гостевая встреча", "Подобрали, не пригласили: не прошёл по доходимости"]],
+        },
+        {
+          id: "p4", name: "Елена Сафина", initials: "ЕС", av: "var(--chart-5)", club: "cf1", clubName: "Club First One",
+          company: "Safina Retail Group", position: "Собственник", city: "Москва", profileUrl: "profile://cf1/person/p4",
+          industry: "retail, франшизы", revenue: "≈ 1.2 млрд ₽ / год",
+          interests: "современное искусство, путешествия, ЗОЖ",
+          projects: "Запускает собственную сеть по франшизе",
+          request: "Партнёрства по франшизам и логистике",
+          roles: ["ambassador"],
+          note: "Подходит для гостевых встреч с предпринимателями из retail и франшиз.",
+          facts: { tenure: 2, retention: 79, attendance: 61, paymentPhase: "mid" },
+          gaps: ["доходимость ниже текущего правила"],
+          formats: { guest: "ready", intro: "ready", group: "unmarked", expert: "unmarked", forum: "ready" },
+          participation: [["Февраль 2026", "Гостевая встреча", "Пришла, дала интро"]],
+          matching: [["2 июня", "Гостевая встреча", "Подобрали → пригласили → не пришла"]],
+        },
+        {
+          id: "p5", name: "Дмитрий Соколов", initials: "ДС", av: "var(--chart-4)", club: "cff", clubName: "Club First Future",
+          company: "Sokolov Capital", position: "Управляющий партнёр", city: "Москва", profileUrl: "profile://cff/person/p5",
+          industry: "инвестиции, капитал, M&A", revenue: "≈ 4 млрд ₽ под управлением",
+          interests: "коллекционирование вина, гольф, частные клубы",
+          projects: "Формирует фонд раннего роста",
+          request: "Ищет проекты для инвестиций и соинвесторов",
+          roles: [],
+          note: "Не исключён глобально: можно звать на стыковки, но не готов к гостевым.",
+          facts: { tenure: 2, retention: 66, attendance: 34, paymentPhase: "end" },
+          gaps: ["доходимость"],
+          formats: { guest: "no", intro: "ready", group: "unmarked", expert: "unmarked", forum: "no" },
+          participation: [["Январь 2026", "Форум", "Был в списке, участие не подтверждено"]],
+          matching: [["29 мая", "Гостевая встреча", "Не попал в matching: формат не готов"], ["10 апреля", "Стыковка", "Подобрали → интро состоялось"]],
+        },
+      ];
+
+      const formatLabels = { guest: "Гостевая", intro: "Стыковки", group: "Рабочая группа", expert: "Экспертный диалог", forum: "Форум" };
+      const readinessLabels = { ready: "Готов", unmarked: "Не размечен", no: "Не готов" };
+
+      // ---------- State ----------
+      const storageKey = "pau-participants-redesign-v3";
+      const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+      let state = saved || { participants: structuredClone(baseParticipants), rules: structuredClone(baseRules), roles: structuredClone(baseRoles) };
+      let { participants, rules, roles } = state;
+      let selectedId = participants[0].id;
+      let clubFilter = "all", statusFilter = "all", sortBy = "status", query = "", loading = false, activeTab = "profile";
+
+      const $ = (s) => document.querySelector(s);
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      const persist = () => { state = { participants, rules, roles }; localStorage.setItem(storageKey, JSON.stringify(state)); };
+      const rolesOf = (p) => p.roles.map((id) => roles.find((r) => r.id === id)).filter(Boolean);
+
+      // Human-readable rendering of a fact value
+      function factValue(p, factKey) {
+        const f = p.facts;
+        switch (factKey) {
+          case "tenure": return `${f.tenure}-й год`;
+          case "retention": return `${f.retention}%`;
+          case "attendance": return `${f.attendance}%`;
+          case "payment": return phaseLabels[f.paymentPhase];
+          case "activity": { const r = rolesOf(p); return r.length ? r.map((x) => x.name).join(", ") : "нет заметной роли"; }
+          default: return "";
+        }
+      }
+      const attendanceWord = (v) => (v >= 80 ? "приходит почти всегда" : v >= 65 ? "приходит часто" : v >= 50 ? "через раз" : "ходит редко");
+
+      // Evaluate one rule against a participant -> {pass, has} (has=false means fact missing)
+      function checkRule(p, rule) {
+        const f = p.facts;
+        switch (rule.type) {
+          case "min-year": return { has: typeof f.tenure === "number", pass: f.tenure >= rule.min };
+          case "min-pct": { const v = f[rule.fact]; return { has: typeof v === "number", pass: v >= rule.min }; }
+          case "phase": return { has: !!f.paymentPhase, pass: f.paymentPhase === rule.pass };
+          case "has-role": return { has: true, pass: rolesOf(p).length > 0 };
+          default: return { has: true, pass: true };
+        }
+      }
+      // Map a rule to the fact key it reads (for the profile facts panel)
+      const ruleFactKey = (rule) => ({ "min-year": "tenure", "min-pct": rule.fact, phase: "payment", "has-role": "activity" }[rule.type]);
+
+      function evaluate(p) {
+        const active = rules.filter((r) => r.enabled);
+        const failed = [], missing = [];
+        for (const r of active) {
+          const { has, pass } = checkRule(p, r);
+          if (!has) missing.push(r);
+          else if (!pass) failed.push(r);
+        }
+        return { passed: failed.length === 0 && missing.length === 0, failed, missing, total: active.length };
+      }
+
+      function visible() {
+        const q = query.trim().toLowerCase();
+        const list = participants.filter((p) => {
+          const ev = evaluate(p);
+          const hasGaps = p.gaps.length > 0 || ev.missing.length > 0;
+          const clubOk = clubFilter === "all" || p.club === clubFilter;
+          const statusOk = statusFilter === "all" || (statusFilter === "active" && ev.passed) || (statusFilter === "inactive" && !ev.passed) || (statusFilter === "gaps" && hasGaps);
+          const text = [p.name, p.company, p.position, p.city, p.industry, p.interests, ...rolesOf(p).map((r) => r.name)].join(" ").toLowerCase();
+          return clubOk && statusOk && (!q || text.includes(q));
+        });
+        list.sort((a, b) => {
+          if (sortBy === "name") return a.name.localeCompare(b.name, "ru");
+          if (sortBy === "retention") return b.facts.retention - a.facts.retention;
+          return Number(evaluate(b).passed) - Number(evaluate(a).passed) || b.facts.retention - a.facts.retention;
+        });
+        return list;
+      }
+      const selected = () => participants.find((p) => p.id === selectedId) || participants[0];
+
+      // ---------- Rules editor ----------
+      function ruleCriterion(r) {
+        if (r.type === "min-year") return `от <input class="mono" type="number" min="1" max="9" data-min="${r.id}" value="${r.min}" aria-label="Минимальный год" />-го года`;
+        if (r.type === "min-pct") return `≥ <input class="mono" type="number" min="0" max="100" data-min="${r.id}" value="${r.min}" aria-label="Минимальный процент" /> %`;
+        if (r.type === "phase") return `засчитывается: середина`;
+        if (r.type === "has-role") return `нужна назначенная роль`;
+        return "";
+      }
+      function renderRules() {
+        $("#rules").innerHTML = rules
+          .map(
+            (r) => `
+          <div class="rule ${r.enabled ? "" : "off"}">
+            <div class="rule-top">
+              <input class="rule-name" data-label="${r.id}" value="${esc(r.label)}" aria-label="Название правила" />
+              <label class="switch" title="Включить правило"><input type="checkbox" data-enabled="${r.id}" ${r.enabled ? "checked" : ""} /><span class="track"></span></label>
+            </div>
+            <p>${esc(r.desc)}${r.extra ? " <span class=\"muted\">(дополнительно)</span>" : ""}</p>
+            <div class="rule-foot"><span class="crit">${ruleCriterion(r)}</span></div>
+          </div>`
+          )
+          .join("");
+
+        document.querySelectorAll("[data-label]").forEach((el) => el.addEventListener("change", () => { const r = rules.find((x) => x.id === el.dataset.label); r.label = el.value.trim() || r.label; persist(); render(); }));
+        document.querySelectorAll("[data-min]").forEach((el) => el.addEventListener("change", () => { const r = rules.find((x) => x.id === el.dataset.min); const max = r.type === "min-year" ? 9 : 100; r.min = Math.max(0, Math.min(max, Number(el.value) || 0)); persist(); render(); }));
+        document.querySelectorAll("[data-band]").forEach((el) => el.addEventListener("change", () => { const r = rules.find((x) => x.id === el.dataset.band); r.min = Number(el.value); persist(); render(); }));
+        document.querySelectorAll("[data-enabled]").forEach((el) => el.addEventListener("change", () => { const r = rules.find((x) => x.id === el.dataset.enabled); r.enabled = el.checked; persist(); render(); }));
+      }
+
+      function renderRoles() {
+        $("#roles").innerHTML = roles
+          .map((role) => { const count = participants.filter((p) => p.roles.includes(role.id)).length; return `
+          <div class="role"><div class="role-top"><strong>${esc(role.name)}</strong><span class="badge neutral mono">${count}</span></div><p>${esc(role.description)}</p></div>`; })
+          .join("");
+      }
+
+      // ---------- Summary ----------
+      function renderSummary() {
+        const vis = visible();
+        const clubs = new Set(participants.map((p) => p.club)).size;
+        const active = vis.filter((p) => evaluate(p).passed).length;
+        const guest = vis.filter((p) => p.formats.guest === "ready").length;
+        const gaps = vis.filter((p) => p.gaps.length || evaluate(p).missing.length).length;
+        $("#s-total").textContent = vis.length;
+        $("#s-total-ctx").textContent = `из ${clubs} клубов`;
+        $("#s-active").textContent = active;
+        $("#s-active-ctx").textContent = vis.length ? `${Math.round((active / vis.length) * 100)}% от выборки` : "нет данных";
+        $("#s-guest").textContent = guest;
+        $("#s-gaps").textContent = gaps;
+      }
+
+      // ---------- List ----------
+      const skeleton = () => Array.from({ length: 4 }).map(() => `
+        <div class="skeleton-row">
+          <div class="identity"><div class="sk av"></div><div style="display:grid;gap:8px;width:100%"><div class="sk lg"></div><div class="sk sm"></div></div></div>
+          <div style="display:grid;gap:9px"><div class="sk" style="width:40%;height:18px"></div><div class="sk sm"></div></div>
+          <div style="display:grid;gap:6px"><div class="sk" style="width:70%"></div><div class="sk" style="width:60%"></div></div>
+        </div>`).join("");
+
+      function renderList() {
+        const el = $("#list");
+        if (loading) { el.innerHTML = skeleton(); return; }
+        const vis = visible();
+        if (!vis.some((p) => p.id === selectedId) && vis[0]) selectedId = vis[0].id;
+        if (!vis.length) {
+          el.innerHTML = `<div class="empty"><svg class="icon"><use href="#i-search" /></svg><strong>Ничего не найдено</strong><p class="muted" style="max-width:36ch">Под выбранные клуб, статус и поиск нет участников.</p></div>`;
+          renderPanel(); return;
+        }
+        el.innerHTML = vis.map((p) => {
+          const ev = evaluate(p);
+          const formats = Object.entries(p.formats).map(([k, v]) => `<span class="fmt"><span class="pip ${v}"></span>${formatLabels[k]}</span>`).join("");
+          const factline = `<b>${p.facts.tenure}-й год</b> · retention <b>${p.facts.retention}%</b> · доходимость <b>${p.facts.attendance}%</b>`;
+          const roleBadge = rolesOf(p).length ? `<span class="badge">${esc(rolesOf(p)[0].name)}</span>` : "";
+          const reasons = ev.passed ? "" : `<div class="reasons">${[...ev.failed, ...ev.missing].slice(0, 3).map((r) => `<span class="badge fail">${esc(r.label)}</span>`).join("")}</div>`;
+          return `
+          <button class="row ${p.id === selectedId ? "selected" : ""}" data-select="${p.id}" type="button" aria-pressed="${p.id === selectedId}">
+            <div class="identity">
+              <div class="avatar" style="--av: ${p.av}">${esc(p.initials)}</div>
+              <div class="identity-main">
+                <span class="name">${esc(p.name)}</span>
+                <span class="sub">${esc(p.company)} · ${esc(p.position)}</span>
+                <div class="meta"><span class="badge">${esc(p.clubName)}</span>${roleBadge}</div>
+              </div>
+            </div>
+            <div class="assess">
+              <span class="status ${ev.passed ? "active" : "inactive"}"><svg class="icon"><use href="#${ev.passed ? "i-check" : "i-info"}" /></svg>${ev.passed ? "Активный по правилам" : `Не активный · ${ev.failed.length + ev.missing.length} из ${ev.total}`}</span>
+              <span class="factline">${factline}</span>
+              ${reasons}
+            </div>
+            <div class="formats-cell">${formats}</div>
+          </button>`;
+        }).join("");
+        document.querySelectorAll("[data-select]").forEach((b) => b.addEventListener("click", () => { selectedId = b.dataset.select; render(); }));
+        renderPanel();
+      }
+
+      // ---------- Detail panel ----------
+      function renderPanel() {
+        const p = selected();
+        const panel = $("#panel");
+        if (!p) { panel.innerHTML = `<div class="empty"><svg class="icon"><use href="#i-users" /></svg><p class="muted">Выбери участника слева</p></div>`; return; }
+        const ev = evaluate(p);
+        const failNames = [...ev.failed, ...ev.missing].map((r) => r.label.toLowerCase());
+
+        const facts = rules.filter((r) => r.enabled).map((r) => {
+          const fk = ruleFactKey(r);
+          const { has, pass } = checkRule(p, r);
+          const mark = !has ? "na" : pass ? "ok" : "bad";
+          const markIcon = !has ? "i-help" : pass ? "i-check" : "i-x";
+          let extra = "";
+          if (fk === "retention") extra = `<div class="bar ${pass ? "is-ok" : "is-bad"}"><span data-w="${p.facts.retention}"></span></div>`;
+          if (fk === "attendance") extra = `<div class="bar ${pass ? "is-ok" : "is-bad"}"><span data-w="${p.facts.attendance}"></span></div>`;
+          const note = fk === "attendance" ? ` <small>· ${attendanceWord(p.facts.attendance)}</small>` : "";
+          return `
+            <div class="fact">
+              <span class="k">${esc(r.label)}</span>
+              <span class="v">${has ? factValue(p, fk) : "нет данных"}${note}${extra}</span>
+              <span class="mark ${mark}" title="${has ? (pass ? "проходит правило" : "не проходит правило") : "факт не заполнен"}"><svg class="icon"><use href="#${markIcon}" /></svg></span>
+            </div>`;
+        }).join("");
+
+        const info = [
+          ["Компания", p.company],
+          ["Оборот", p.revenue],
+          ["Отрасль", p.industry],
+          ["Город", p.city],
+          ["Интересы и хобби", p.interests],
+          ["Проекты", p.projects],
+          ["Запрос к клубу", p.request],
+        ].filter((x) => x[1]).map(([k, v]) => `<div class="info-row"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+
+        const assigned = rolesOf(p).map((r) => `<span class="role-chip">${esc(r.name)}<button type="button" data-remove="${r.id}" aria-label="Убрать роль"><svg class="icon" style="width:11px;height:11px"><use href="#i-x" /></svg></button></span>`).join("") || `<span class="badge neutral">Роли не назначены</span>`;
+
+        const formatRows = Object.entries(formatLabels).map(([k, label]) => {
+          const v = p.formats[k]; const included = v === "ready" || v === "unmarked";
+          return `
+            <div class="format-row">
+              <div><div class="fmt-name">${label}</div><div class="fmt-state ${included ? "muted" : ""}" style="${included ? "" : "color: color-mix(in oklab, var(--bad) 66%, var(--foreground))"}">${included ? "попадает в matching" : "исключён из matching"}</div></div>
+              <div class="seg-mini" role="group" aria-label="Готовность: ${label}">
+                <button type="button" data-format="${k}" data-v="ready" aria-pressed="${v === "ready"}">Готов</button>
+                <button type="button" data-format="${k}" data-v="unmarked" aria-pressed="${v === "unmarked"}">Не размечен</button>
+                <button type="button" data-format="${k}" data-v="no" aria-pressed="${v === "no"}">Не готов</button>
+              </div>
+            </div>`;
+        }).join("");
+
+        const timeline = (items) => items.length ? items.map(([d, t, w]) => `<div class="event"><strong>${esc(t)}</strong><span class="when">${esc(d)}</span><span class="what">${esc(w)}</span></div>`).join("") : `<p class="muted">Пока нет записей.</p>`;
+
+        panel.innerHTML = `
+          <div class="panel-head">
+            <div class="who"><div class="avatar" style="--av: ${p.av}">${esc(p.initials)}</div><div><div class="name">${esc(p.name)}</div><div class="sub">${esc(p.company)} · ${esc(p.position)}</div></div></div>
+            <span class="badge">${esc(p.clubName)}</span>
+          </div>
+          <div class="verdict ${ev.passed ? "active" : "inactive"}">
+            <span class="head"><svg class="icon"><use href="#${ev.passed ? "i-check" : "i-info"}" /></svg>${ev.passed ? "Активный участник" : "Не активный по правилам"}</span>
+            <p>${ev.passed ? `Проходит все правила (${ev.total}). Это вывод из правил выше, не ручная метка.` : `Не проходит: ${failNames.join(", ")}. Это не запрет на все форматы — готовность задаётся отдельно ниже.`}</p>
+          </div>
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" data-tab="profile" aria-selected="${activeTab === "profile"}">Профиль</button>
+            <button class="tab" role="tab" data-tab="formats" aria-selected="${activeTab === "formats"}">Форматы</button>
+            <button class="tab" role="tab" data-tab="history" aria-selected="${activeTab === "history"}">История</button>
+          </div>
+          <div class="tab-body">
+            <div class="tab-panel ${activeTab === "profile" ? "active" : ""}" data-panel="profile">
+              <div class="block"><h3>Факты профиля <span class="src"><svg class="icon" style="width:12px;height:12px"><use href="#i-info" /></svg>из клубного профиля</span></h3><div class="facts">${facts}</div></div>
+              <div class="block"><h3>О человеке и бизнесе</h3><div class="info">${info}</div>
+                <div class="hint"><svg class="icon"><use href="#i-info" /></svg><span>Оборот и масштаб бизнеса работают в правилах мэтчинга (соразмерность пары), а не в статусе активного участника.</span></div>
+              </div>
+              <div class="block"><h3>Роли</h3>
+                <div class="field"><label for="role-select">Назначить роль</label><select class="select input" id="role-select"><option value="">Выбрать роль…</option>${roles.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select></div>
+                <div class="chips">${assigned}</div>
+              </div>
+              <div class="block"><h3>Комментарий менеджера</h3><div class="field"><textarea class="input" id="note" placeholder="Когда и зачем звать этого участника…">${esc(p.note)}</textarea></div><button class="btn primary" id="save-note" type="button"><svg class="icon"><use href="#i-check" /></svg><span>Сохранить</span></button></div>
+            </div>
+            <div class="tab-panel ${activeTab === "formats" ? "active" : ""}" data-panel="formats">
+              <div class="block"><h3>Готовность по форматам</h3><div style="display:grid;gap:8px">${formatRows}</div>
+                <div class="hint"><svg class="icon"><use href="#i-info" /></svg><span>Matching берёт участников со статусом «Готов» и «Не размечен». «Не готов» исключает только конкретный формат. После мэтчинга статус может проставиться автоматически.</span></div>
+              </div>
+            </div>
+            <div class="tab-panel ${activeTab === "history" ? "active" : ""}" data-panel="history">
+              <div class="block"><h3>История участия</h3><div class="timeline">${timeline(p.participation)}</div></div>
+              <div class="block"><h3>История мэтчинга</h3><div class="timeline">${timeline(p.matching)}</div></div>
+            </div>
+          </div>`;
+
+        panel.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { activeTab = b.dataset.tab; renderPanel(); }));
+        panel.querySelectorAll("[data-remove]").forEach((b) => b.addEventListener("click", () => { p.roles = p.roles.filter((id) => id !== b.dataset.remove); persist(); render(); }));
+        const sel = panel.querySelector("#role-select");
+        if (sel) sel.addEventListener("change", (e) => { const id = e.target.value; if (id && !p.roles.includes(id)) { p.roles.push(id); persist(); render(); } });
+        panel.querySelectorAll("[data-format]").forEach((b) => b.addEventListener("click", () => { p.formats[b.dataset.format] = b.dataset.v; persist(); render(); }));
+        const save = panel.querySelector("#save-note");
+        if (save) save.addEventListener("click", () => { p.note = panel.querySelector("#note").value.trim(); persist(); save.querySelector("span").textContent = "Сохранено"; setTimeout(() => (save.querySelector("span").textContent = "Сохранить"), 1400); });
+        requestAnimationFrame(() => panel.querySelectorAll(".bar > span[data-w]").forEach((s) => (s.style.width = s.dataset.w + "%")));
+      }
+
+      function render() { renderRules(); renderRoles(); renderSummary(); renderList(); }
+
+      // ---------- Wiring ----------
+      function reloadList() { loading = true; renderSummary(); renderList(); setTimeout(() => { loading = false; renderList(); }, 300); }
+      document.querySelectorAll("[data-club]").forEach((b) => b.addEventListener("click", () => { document.querySelectorAll("[data-club]").forEach((x) => x.classList.remove("active")); b.classList.add("active"); clubFilter = b.dataset.club; reloadList(); }));
+      document.querySelectorAll("[data-status]").forEach((b) => b.addEventListener("click", () => { document.querySelectorAll("[data-status]").forEach((x) => x.classList.remove("active")); b.classList.add("active"); statusFilter = b.dataset.status; reloadList(); }));
+      $("#search").addEventListener("input", (e) => { query = e.target.value; renderSummary(); renderList(); });
+      $("#sort").addEventListener("change", (e) => { sortBy = e.target.value; renderList(); });
+      $("#add-role").addEventListener("click", () => { const name = $("#role-name").value.trim(); if (!name) return; roles.push({ id: `role_${Date.now()}`, name, description: $("#role-desc").value.trim() || "Описание роли не заполнено." }); $("#role-name").value = ""; $("#role-desc").value = ""; persist(); render(); });
+
+      $("#config-toggle").addEventListener("click", () => {
+        const cfg = $("#config"); const open = cfg.hidden; cfg.hidden = !open;
+        $("#config-toggle").setAttribute("aria-expanded", String(open));
+        $("#config-label").textContent = open ? "Скрыть правила и роли" : "Показать правила и роли";
+        $("#config-chevron").style.transform = open ? "" : "rotate(-90deg)";
+      });
+
+      function applyTheme(t) { document.documentElement.dataset.theme = t; $("#theme-icon").innerHTML = `<use href="#${t === "dark" ? "i-sun" : "i-moon"}" />`; localStorage.setItem("pau-theme", t); }
+      $("#theme-toggle").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+      applyTheme(localStorage.getItem("pau-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+
+      $("#reset").addEventListener("click", () => {
+        localStorage.removeItem(storageKey);
+        participants = structuredClone(baseParticipants); rules = structuredClone(baseRules); roles = structuredClone(baseRoles);
+        selectedId = participants[0].id; clubFilter = "all"; statusFilter = "all"; query = ""; $("#search").value = "";
+        document.querySelectorAll("[data-club]").forEach((x, i) => x.classList.toggle("active", i === 0));
+        document.querySelectorAll("[data-status]").forEach((x, i) => x.classList.toggle("active", i === 0));
+        persist(); render();
+      });
+
+      render();
+    </script>
+  </body>
+</html>
