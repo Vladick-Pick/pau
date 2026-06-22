@@ -29,14 +29,17 @@ function evaluateRule(
   switch (rule.type) {
     case "MIN_YEAR": {
       const has = facts.tenureYear != null;
-      const ok = has && facts.tenureYear! >= Number(rule.config.min);
+      const min = Number(rule.config.min);
+      // A misconfigured threshold (NaN/Infinity) must not silently lock everyone out.
+      const ok = has && (!Number.isFinite(min) || facts.tenureYear! >= min);
       return { has, ok };
     }
     case "MIN_PERCENT": {
       const value =
         facts[rule.factKey as "retention" | "attendance"] ?? null;
       const has = value != null;
-      const ok = has && value! >= Number(rule.config.min);
+      const min = Number(rule.config.min);
+      const ok = has && (!Number.isFinite(min) || value! >= min);
       return { has, ok };
     }
     case "PHASE": {
@@ -49,7 +52,8 @@ function evaluateRule(
     }
     case "MIN_BAND": {
       const has = facts.businessBand != null;
-      const ok = has && facts.businessBand! >= Number(rule.config.min);
+      const min = Number(rule.config.min);
+      const ok = has && (!Number.isFinite(min) || facts.businessBand! >= min);
       return { has, ok };
     }
     case "HAS_ROLE": {
@@ -76,10 +80,18 @@ export function evaluateActive(
     }
   }
 
+  const total = enabledRules.length;
+  // Optional rules that fail or are missing do not block active status.
+  const blocking = (arr: ActiveRuleInput[]) => arr.filter((r) => !r.optional);
+  const passed =
+    total > 0 &&
+    blocking(failed).length === 0 &&
+    blocking(missing).length === 0;
+
   return {
-    passed: failed.length === 0 && missing.length === 0,
+    passed,
     failed,
     missing,
-    total: enabledRules.length,
+    total,
   };
 }

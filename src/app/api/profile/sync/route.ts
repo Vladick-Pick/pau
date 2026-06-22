@@ -1,4 +1,5 @@
 import { requireApiRole } from "@/lib/api/auth";
+import { ProfileApiError } from "@/lib/profile/client";
 import { syncAllClubs } from "@/lib/profile/sync";
 
 export async function POST() {
@@ -9,11 +10,16 @@ export async function POST() {
 
   try {
     const results = await syncAllClubs();
-    return Response.json({ results });
+    return Response.json({ data: results });
   } catch (error) {
+    // A client-side ProfileApiError (4xx) is the caller's fault → 400.
+    // Anything else (5xx upstream, network, bug) → 500, without leaking detail.
+    if (error instanceof ProfileApiError && error.status < 500) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
     return Response.json(
-      { error: error instanceof Error ? error.message : "Profile sync failed" },
-      { status: 400 }
+      { error: "Profile sync failed" },
+      { status: 500 }
     );
   }
 }

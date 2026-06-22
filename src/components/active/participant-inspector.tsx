@@ -8,7 +8,6 @@ import {
   AlertCircleIcon,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -21,6 +20,7 @@ import type {
   ParticipantDetail,
   ReadinessValue,
 } from "./types";
+import { getInitials, readinessLabel } from "./utils";
 
 type Props = {
   detail: ParticipantDetail | null;
@@ -38,15 +38,6 @@ type Props = {
   onAssignRole: (roleId: string, profileId: string) => Promise<void>;
   onUnassignRole: (roleId: string, profileId: string) => Promise<void>;
 };
-
-function getInitials(name: string | null): string {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  }
-  return name.slice(0, 2).toUpperCase();
-}
 
 const FACT_LABELS: Record<string, string> = {
   tenureYear: "Стаж (год)",
@@ -253,6 +244,7 @@ export function ParticipantInspector({
 }: Props) {
   const [activeTab, setActiveTab] = useState<InspectorTab>("profile");
   const [readinessPending, setReadinessPending] = useState<string | null>(null);
+  const [rolePending, setRolePending] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveTab("profile");
@@ -272,18 +264,28 @@ export function ParticipantInspector({
 
   const handleAssign = useCallback(
     async (roleId: string) => {
-      if (!detail) return;
-      await onAssignRole(roleId, detail.profileId);
+      if (!detail || rolePending) return;
+      setRolePending(roleId);
+      try {
+        await onAssignRole(roleId, detail.profileId);
+      } finally {
+        setRolePending(null);
+      }
     },
-    [detail, onAssignRole]
+    [detail, onAssignRole, rolePending]
   );
 
   const handleUnassign = useCallback(
     async (roleId: string) => {
-      if (!detail) return;
-      await onUnassignRole(roleId, detail.profileId);
+      if (!detail || rolePending) return;
+      setRolePending(roleId);
+      try {
+        await onUnassignRole(roleId, detail.profileId);
+      } finally {
+        setRolePending(null);
+      }
     },
-    [detail, onUnassignRole]
+    [detail, onUnassignRole, rolePending]
   );
 
   return (
@@ -398,6 +400,20 @@ export function ParticipantInspector({
                     Факты и правила
                   </h3>
                   {detail.rules.map((rule) => {
+                    // HAS_ROLE is a special case: presence/pass comes from roles, not a fact key
+                    if (rule.type === "HAS_ROLE") {
+                      const hasRoles = detail.roleIds.length > 0;
+                      return (
+                        <FactRow
+                          key={rule.key}
+                          label={rule.label}
+                          value={hasRoles ? detail.roleIds.join(", ") : "нет ролей"}
+                          passed={hasRoles}
+                          hasFact={true}
+                        />
+                      );
+                    }
+
                     const factKey = rule.factKey ?? ruleToFactKey(rule.type);
                     const factValue =
                       factKey && factKey in detail.facts
@@ -446,7 +462,8 @@ export function ParticipantInspector({
                             {canManage && (
                               <button
                                 aria-label={`Снять роль ${role?.name ?? roleId}`}
-                                className="grid size-4 place-items-center rounded-full bg-[color-mix(in_oklab,var(--chart-2)_22%,transparent)] transition-colors hover:bg-[color-mix(in_oklab,var(--chart-2)_35%,transparent)]"
+                                className="grid size-4 place-items-center rounded-full bg-[color-mix(in_oklab,var(--chart-2)_22%,transparent)] transition-colors hover:bg-[color-mix(in_oklab,var(--chart-2)_35%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={rolePending !== null}
                                 onClick={() => void handleUnassign(roleId)}
                                 type="button"
                               >
@@ -465,7 +482,8 @@ export function ParticipantInspector({
                         .map((r) => (
                           <button
                             key={r.id}
-                            className="rounded-full border bg-card px-2 py-0.5 text-[11.5px] font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                            className="rounded-full border bg-card px-2 py-0.5 text-[11.5px] font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={rolePending !== null}
                             onClick={() => void handleAssign(r.id)}
                             type="button"
                           >
@@ -584,18 +602,11 @@ export function ParticipantInspector({
   );
 }
 
-function readinessLabel(r: string): string {
-  if (r === "READY") return "Готов";
-  if (r === "NOT_READY") return "Не готов";
-  return "Не размечен";
-}
-
 function ruleToFactKey(type: string): string | null {
   const map: Record<string, string> = {
     MIN_YEAR: "tenureYear",
     PHASE: "paymentPhase",
     MIN_BAND: "businessBand",
-    HAS_ROLE: "",
   };
   return map[type] ?? null;
 }

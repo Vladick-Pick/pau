@@ -6,7 +6,6 @@ import {
   useMemo,
   useReducer,
   useState,
-  useTransition,
 } from "react";
 import {
   CalendarDaysIcon,
@@ -200,7 +199,7 @@ export function ActiveParticipantsConsole({
 }: Props) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [configOpen, setConfigOpen] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Load clubs on mount
   useEffect(() => {
@@ -276,23 +275,27 @@ export function ActiveParticipantsConsole({
       return;
     }
 
+    let stale = false;
     dispatch({ type: "SET_DETAIL_LOAD", state: { status: "loading" } });
     void (async () => {
       try {
         const res = await fetch(
           `/api/clubs/${state.selectedClubId}/participants/${state.selectedProfileId}`
         );
+        if (stale) return;
         if (res.status === 401) {
           window.location.href = "/login";
           return;
         }
         const body = (await res.json()) as { data: ParticipantDetail; error?: string };
+        if (stale) return;
         if (!res.ok) {
           throw new Error(body.error ?? "Participant not found");
         }
         dispatch({ type: "SET_DETAIL", detail: body.data });
         dispatch({ type: "SET_DETAIL_LOAD", state: { status: "ok" } });
       } catch (err) {
+        if (stale) return;
         dispatch({
           type: "SET_DETAIL_LOAD",
           state: {
@@ -302,17 +305,20 @@ export function ActiveParticipantsConsole({
         });
       }
     })();
+    return () => { stale = true; };
   }, [state.selectedClubId, state.selectedProfileId]);
 
   const handleClubChange = useCallback((clubId: string) => {
     dispatch({ type: "SET_CLUB_ID", clubId });
   }, []);
 
-  const handleRefresh = useCallback(() => {
-    if (state.selectedClubId) {
-      startTransition(() => {
-        void loadClubData(state.selectedClubId!);
-      });
+  const handleRefresh = useCallback(async () => {
+    if (!state.selectedClubId) return;
+    setIsRefreshing(true);
+    try {
+      await loadClubData(state.selectedClubId);
+    } finally {
+      setIsRefreshing(false);
     }
   }, [state.selectedClubId, loadClubData]);
 
@@ -389,14 +395,11 @@ export function ActiveParticipantsConsole({
     async (roleId: string, profileId: string) => {
       if (!state.selectedClubId) return;
       try {
-        await fetch(
-          `/api/clubs/${state.selectedClubId}/roles/${roleId}/assignments`,
-          {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ profileId }),
-          }
+        const res = await fetch(
+          `/api/clubs/${state.selectedClubId}/roles/${roleId}/assignments?profileId=${encodeURIComponent(profileId)}`,
+          { method: "DELETE" }
         );
+        if (!res.ok) throw new Error("unassign failed");
         await loadClubData(state.selectedClubId);
       } catch {
         // ignore
@@ -411,7 +414,7 @@ export function ActiveParticipantsConsole({
       // Optimistic update
       dispatch({ type: "OPTIMISTIC_READINESS", profileId, formatId, readiness });
       try {
-        await fetch(
+        const res = await fetch(
           `/api/clubs/${state.selectedClubId}/participants/${profileId}/readiness`,
           {
             method: "PUT",
@@ -419,8 +422,9 @@ export function ActiveParticipantsConsole({
             body: JSON.stringify({ formatId, readiness }),
           }
         );
+        if (!res.ok) throw new Error("readiness failed");
       } catch {
-        // Reconcile by reloading
+        // Reconcile by reloading true state
         await loadClubData(state.selectedClubId!);
       }
     },
@@ -444,8 +448,12 @@ export function ActiveParticipantsConsole({
           const res = await fetch(
             `/api/clubs/${state.selectedClubId}/participants/${profileId}`
           );
-          const body = (await res.json()) as { data: ParticipantDetail };
-          dispatch({ type: "SET_DETAIL", detail: body.data });
+          if (res.ok) {
+            const body = (await res.json()) as { data: ParticipantDetail };
+            if (body.data) {
+              dispatch({ type: "SET_DETAIL", detail: body.data });
+            }
+          }
         }
       } catch {
         // ignore
@@ -570,12 +578,13 @@ export function ActiveParticipantsConsole({
               onSelect={handleClubChange}
             />
             <Button
-              disabled={isPending || !state.selectedClubId}
-              onClick={handleRefresh}
+              aria-label={isRefreshing ? "Обновление" : "Обновить"}
+              disabled={isRefreshing || !state.selectedClubId}
+              onClick={() => void handleRefresh()}
               size="icon-sm"
               variant="outline"
             >
-              {isPending ? (
+              {isRefreshing ? (
                 <Loader2Icon data-icon="icon" className="animate-spin" />
               ) : (
                 <RefreshCwIcon />

@@ -1,4 +1,5 @@
 import { requireApiRole } from "@/lib/api/auth";
+import { mutationErrorResponse } from "@/lib/api/mutation-error";
 import { deleteRole } from "@/lib/pau/active-store";
 
 export async function DELETE(
@@ -11,16 +12,10 @@ export async function DELETE(
   }
 
   try {
-    const { roleId } = await context.params;
-    await deleteRole(roleId);
+    const { clubId, roleId } = await context.params;
+    await deleteRole(clubId, roleId);
     return Response.json({ data: { ok: true } });
   } catch (error) {
-    return Response.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Role deletion failed",
-      },
-      { status: 400 }
-    );
+    return mutationErrorResponse(error);
   }
 }

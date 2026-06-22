@@ -292,6 +292,7 @@ model MemberProfile {
   profileUpdatedAt DateTime?
   syncedAt      DateTime  @updatedAt
   @@unique([clubId, profileId])
+  @@index([clubId])
 }
 
 enum ActiveRuleType {
@@ -316,6 +317,7 @@ model ActiveRule {
   optional    Boolean        @default(false)
   sortOrder   Int            @default(0)
   @@unique([clubId, key])
+  @@index([clubId])
 }
 
 model ActiveRole {
@@ -326,6 +328,7 @@ model ActiveRole {
   description String?
   assignments ActiveRoleAssignment[]
   @@unique([clubId, name])
+  @@index([clubId])
 }
 
 model ActiveRoleAssignment {
@@ -334,6 +337,7 @@ model ActiveRoleAssignment {
   role      ActiveRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
   profileId String
   @@unique([roleId, profileId])
+  @@index([profileId])
 }
 
 enum ReadinessState {
@@ -350,14 +354,17 @@ model FormatReadiness {
   formatId  String
   readiness ReadinessState @default(UNMARKED)
   updatedAt DateTime       @updatedAt
-  @@unique([profileId, formatId])
+  @@unique([clubId, profileId, formatId])
+  @@index([clubId])
 }
 
 model ParticipantNote {
   id        String   @id @default(cuid())
   clubId    String
   club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  profileId String   @unique
+  profileId String
   note      String
   updatedAt DateTime @updatedAt
+  @@unique([clubId, profileId])
+  @@index([clubId])
 }

@@ -25,6 +25,7 @@ import type {
   SortBy,
   StatusFilter,
 } from "./types";
+import { getInitials, readinessLabel } from "./utils";
 
 type Props = {
   participants: ActiveParticipantSummary[];
@@ -40,15 +41,6 @@ type Props = {
   onSortChange: (sort: SortBy) => void;
   onQueryChange: (q: string) => void;
 };
-
-function getInitials(name: string | null): string {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  }
-  return name.slice(0, 2).toUpperCase();
-}
 
 const AVATAR_COLORS = [
   "var(--chart-1)",
@@ -107,12 +99,6 @@ function ReadinessPip({ readiness, label }: PipProps) {
       {label}
     </span>
   );
-}
-
-function readinessLabel(r: string): string {
-  if (r === "READY") return "Готов";
-  if (r === "NOT_READY") return "Не готов";
-  return "Не размечен";
 }
 
 function StatusPill({ passed }: { passed: boolean }) {
@@ -186,9 +172,7 @@ export function ActiveParticipantList({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = participants.filter((p) => {
-      const hasGaps =
-        p.evaluation.missingKeys.length > 0 ||
-        p.evaluation.failedKeys.length > 0;
+      const hasGaps = p.evaluation.missingKeys.length > 0;
       const statusOk =
         statusFilter === "all" ||
         (statusFilter === "active" && p.evaluation.passed) ||
@@ -230,15 +214,13 @@ export function ActiveParticipantList({
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <div
-            role="tablist"
             aria-label="Фильтр по статусу"
             className="inline-flex gap-0.5 rounded-lg border bg-muted/60 p-[3px]"
           >
             {STATUS_SEGMENTS.map((seg) => (
               <button
                 key={seg.value}
-                role="tab"
-                aria-selected={statusFilter === seg.value}
+                aria-pressed={statusFilter === seg.value}
                 className={cn(
                   "rounded-md px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground",
                   statusFilter === seg.value &&

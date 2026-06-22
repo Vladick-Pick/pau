@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,9 +50,16 @@ export function RolesPanel({
     }
   }
 
-  // Count per role from participants list
-  const countForRole = (roleId: string) =>
-    participants.filter((p) => p.roleIds.includes(roleId)).length;
+  // Count per role from participants list — built once, not inside roles.map()
+  const roleCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of participants) {
+      for (const roleId of p.roleIds) {
+        map.set(roleId, (map.get(roleId) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [participants]);
 
   return (
     <div className="rounded-xl border bg-muted/30 p-4">
@@ -76,7 +83,7 @@ export function RolesPanel({
                 <span className="text-[13px] font-semibold">{role.name}</span>
                 <div className="flex items-center gap-1.5">
                   <Badge variant="outline" className="font-mono text-[11px]">
-                    {countForRole(role.id)}
+                    {roleCountMap.get(role.id) ?? 0}
                   </Badge>
                   {canManage ? (
                     <Button

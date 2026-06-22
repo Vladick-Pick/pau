@@ -14,9 +14,12 @@ import {
   getReadiness,
   setNote,
   getNote,
+  roleIdsByProfile,
+  readinessByProfile,
   upsertMemberProfile,
   listMembers,
   getMember,
+  NotFoundError,
 } from "@/lib/pau/active-store";
 
 const CLUB = "ws_test_store";
@@ -55,7 +58,7 @@ describe("updateRule", () => {
   it("changes config and enabled on a rule", async () => {
     const rules = await getClubRules(CLUB);
     const rule = rules[0];
-    const updated = await updateRule(rule.id, {
+    const updated = await updateRule(CLUB, rule.id, {
       config: { min: 99 },
       enabled: false,
     });
@@ -66,8 +69,18 @@ describe("updateRule", () => {
   it("changes label on a rule", async () => {
     const rules = await getClubRules(CLUB);
     const rule = rules[1];
-    const updated = await updateRule(rule.id, { label: "New Label" });
+    const updated = await updateRule(CLUB, rule.id, { label: "New Label" });
     expect(updated.label).toBe("New Label");
+  });
+
+  it("throws NotFoundError when the rule belongs to a different club", async () => {
+    await getOrSeedClub(CLUB2, "Second Club");
+    const rules = await getClubRules(CLUB);
+    const rule = rules[0];
+    // CLUB2 does not own this rule → must not update it.
+    await expect(
+      updateRule(CLUB2, rule.id, { label: "Hijacked" })
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
@@ -85,14 +98,14 @@ describe("roles", () => {
   });
 
   it("assignRole adds an assignment and listRoles shows count 1", async () => {
-    await assignRole(roleId, "profile_001");
+    await assignRole(CLUB, roleId, "profile_001");
     const list = await listRoles(CLUB);
     const found = list.find((r) => r.id === roleId);
     expect(found!.count).toBe(1);
   });
 
   it("assignRole is idempotent — calling twice results in one assignment", async () => {
-    await assignRole(roleId, "profile_001");
+    await assignRole(CLUB, roleId, "profile_001");
     const list = await listRoles(CLUB);
     const found = list.find((r) => r.id === roleId);
     expect(found!.count).toBe(1);
@@ -103,15 +116,32 @@ describe("roles", () => {
     expect(ids).toContain(roleId);
   });
 
+  it("assignRole throws NotFoundError when the role belongs to a different club", async () => {
+    await getOrSeedClub(CLUB2, "Second Club");
+    await expect(
+      assignRole(CLUB2, roleId, "profile_001")
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
   it("unassignRole removes the assignment", async () => {
-    await unassignRole(roleId, "profile_001");
+    await unassignRole(CLUB, roleId, "profile_001");
     const list = await listRoles(CLUB);
     const found = list.find((r) => r.id === roleId);
     expect(found!.count).toBe(0);
   });
 
+  it("deleteRole throws NotFoundError when the role belongs to a different club", async () => {
+    await getOrSeedClub(CLUB2, "Second Club");
+    await expect(deleteRole(CLUB2, roleId)).rejects.toBeInstanceOf(
+      NotFoundError
+    );
+    // Still present in its real club.
+    const list = await listRoles(CLUB);
+    expect(list.find((r) => r.id === roleId)).toBeDefined();
+  });
+
   it("deleteRole removes the role", async () => {
-    await deleteRole(roleId);
+    await deleteRole(CLUB, roleId);
     const list = await listRoles(CLUB);
     expect(list.find((r) => r.id === roleId)).toBeUndefined();
   });
@@ -122,13 +152,18 @@ describe("setReadiness / getReadiness", () => {
     await getOrSeedClub(CLUB, "Test Club");
     await setReadiness(CLUB, "profile_002", "format_abc", "READY");
     await setReadiness(CLUB, "profile_002", "format_abc", "NOT_READY");
-    const rows = await getReadiness("profile_002");
+    const rows = await getReadiness(CLUB, "profile_002");
     const row = rows.find((r) => r.formatId === "format_abc");
     expect(row).toBeDefined();
     expect(row!.readiness).toBe("NOT_READY");
-    // Only one row for this (profileId, formatId) pair
+    // Only one row for this (clubId, profileId, formatId) tuple
     const duplicates = rows.filter((r) => r.formatId === "format_abc");
     expect(duplicates).toHaveLength(1);
+  });
+
+  it("scopes getReadiness to the club", async () => {
+    const rows = await getReadiness(CLUB, "profile_002");
+    expect(rows.every((r) => r.clubId === CLUB)).toBe(true);
   });
 });
 
@@ -136,19 +171,51 @@ describe("setNote / getNote", () => {
   it("upserts a note and retrieves it", async () => {
     await getOrSeedClub(CLUB, "Test Club");
     await setNote(CLUB, "profile_003", "Initial note");
-    const note = await getNote("profile_003");
+    const note = await getNote(CLUB, "profile_003");
     expect(note).toBe("Initial note");
   });
 
   it("overwrites the note on second call — still one row", async () => {
     await setNote(CLUB, "profile_003", "Updated note");
-    const note = await getNote("profile_003");
+    const note = await getNote(CLUB, "profile_003");
     expect(note).toBe("Updated note");
   });
 
   it("returns null when no note exists", async () => {
-    const note = await getNote("profile_no_note_999");
+    const note = await getNote(CLUB, "profile_no_note_999");
     expect(note).toBeNull();
+  });
+
+  it("scopes notes per club — same profileId in another club is independent", async () => {
+    await getOrSeedClub(CLUB2, "Second Club");
+    await setNote(CLUB, "profile_shared_note", "club one note");
+    await setNote(CLUB2, "profile_shared_note", "club two note");
+    expect(await getNote(CLUB, "profile_shared_note")).toBe("club one note");
+    expect(await getNote(CLUB2, "profile_shared_note")).toBe("club two note");
+  });
+});
+
+describe("bulk helpers", () => {
+  it("roleIdsByProfile groups assignments by profile in one query", async () => {
+    await getOrSeedClub(CLUB, "Test Club");
+    const role = await createRole(CLUB, "Bulk Role");
+    await assignRole(CLUB, role.id, "bulk_profile_1");
+    await assignRole(CLUB, role.id, "bulk_profile_2");
+
+    const map = await roleIdsByProfile(CLUB);
+    expect(map.get("bulk_profile_1")).toContain(role.id);
+    expect(map.get("bulk_profile_2")).toContain(role.id);
+  });
+
+  it("readinessByProfile groups readiness rows by profile in one query", async () => {
+    await getOrSeedClub(CLUB, "Test Club");
+    await setReadiness(CLUB, "bulk_profile_1", "bulk_format_1", "READY");
+
+    const map = await readinessByProfile(CLUB);
+    const rows = map.get("bulk_profile_1") ?? [];
+    const row = rows.find((r) => r.formatId === "bulk_format_1");
+    expect(row).toBeDefined();
+    expect(row!.readiness).toBe("READY");
   });
 });
 
@@ -218,13 +285,13 @@ describe("upsertMemberProfile", () => {
   it("does NOT delete an existing note for the same profileId (reconcile-not-clobber)", async () => {
     await setNote(CLUB, "profile_mem_001", "Manager note");
     await upsertMemberProfile(baseInput);
-    const note = await getNote("profile_mem_001");
+    const note = await getNote(CLUB, "profile_mem_001");
     expect(note).toBe("Manager note");
   });
 
   it("does NOT delete an existing role assignment for the same profileId", async () => {
     const role = await createRole(CLUB, "Фасилитатор");
-    await assignRole(role.id, "profile_mem_001");
+    await assignRole(CLUB, role.id, "profile_mem_001");
     await upsertMemberProfile(baseInput);
     const ids = await roleIdsForProfile(CLUB, "profile_mem_001");
     expect(ids).toContain(role.id);

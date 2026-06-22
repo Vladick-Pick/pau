@@ -41,7 +41,7 @@ describe("POST /api/profile/sync", () => {
     await expect(response.json()).resolves.toEqual({ error: "Forbidden" });
   });
 
-  it("calls syncAllClubs and returns results when MANAGER", async () => {
+  it("calls syncAllClubs and returns results under a data envelope when MANAGER", async () => {
     vi.resetModules();
 
     const syncAllClubs = vi.fn(async () => [
@@ -64,7 +64,7 @@ describe("POST /api/profile/sync", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      results: [
+      data: [
         { clubId: "ws_test_1", synced: 5, failed: 0 },
         { clubId: "ws_test_2", synced: 3, failed: 1 },
       ],
@@ -72,7 +72,33 @@ describe("POST /api/profile/sync", () => {
     expect(syncAllClubs).toHaveBeenCalledTimes(1);
   });
 
-  it("returns 400 with an error message when syncAllClubs throws", async () => {
+  it("returns 400 for a ProfileApiError with status < 500", async () => {
+    vi.resetModules();
+
+    const { ProfileApiError } = await import("@/lib/profile/client");
+
+    vi.doMock("@/lib/api/auth", () => ({
+      requireApiRole: vi.fn(async () => ({
+        session: { role: "MANAGER" },
+        response: null,
+      })),
+    }));
+    vi.doMock("@/lib/profile/sync", () => ({
+      syncAllClubs: vi.fn(async () => {
+        throw new ProfileApiError("BAD_REQUEST", 422, "Bad workspace");
+      }),
+    }));
+
+    const { POST } = await import("../src/app/api/profile/sync/route");
+    const response = await POST();
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Bad workspace",
+    });
+  });
+
+  it("returns 500 with a generic message for a non-ProfileApiError throw", async () => {
     vi.resetModules();
 
     vi.doMock("@/lib/api/auth", () => ({
@@ -83,16 +109,43 @@ describe("POST /api/profile/sync", () => {
     }));
     vi.doMock("@/lib/profile/sync", () => ({
       syncAllClubs: vi.fn(async () => {
-        throw new Error("Profile API unavailable");
+        throw new Error("internal db connection string leaked");
       }),
     }));
 
     const { POST } = await import("../src/app/api/profile/sync/route");
     const response = await POST();
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe("Profile sync failed");
+    // Must not leak the raw error text.
+    expect(JSON.stringify(body)).not.toContain("db connection string");
+  });
+
+  it("returns 500 for a ProfileApiError with status >= 500", async () => {
+    vi.resetModules();
+
+    const { ProfileApiError } = await import("@/lib/profile/client");
+
+    vi.doMock("@/lib/api/auth", () => ({
+      requireApiRole: vi.fn(async () => ({
+        session: { role: "MANAGER" },
+        response: null,
+      })),
+    }));
+    vi.doMock("@/lib/profile/sync", () => ({
+      syncAllClubs: vi.fn(async () => {
+        throw new ProfileApiError("UPSTREAM", 503, "Upstream down");
+      }),
+    }));
+
+    const { POST } = await import("../src/app/api/profile/sync/route");
+    const response = await POST();
+
+    expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
-      error: "Profile API unavailable",
+      error: "Profile sync failed",
     });
   });
 });

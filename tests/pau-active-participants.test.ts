@@ -128,7 +128,7 @@ describe("getActiveParticipants", () => {
 
   it("after assigning a role to A, A.roleIds is non-empty", async () => {
     const role = await createRole(CLUB, "Спикер");
-    await assignRole(role.id, "pA");
+    await assignRole(CLUB, role.id, "pA");
 
     const summaries = await getActiveParticipants(CLUB);
     const a = summaries.find((s) => s.profileId === "pA")!;

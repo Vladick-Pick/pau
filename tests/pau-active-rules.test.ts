@@ -174,4 +174,96 @@ describe("evaluateActive", () => {
     expect(result.failed).toHaveLength(0);
     expect(result.total).toBe(1);
   });
+
+  it("zero enabled rules ⇒ passed is false (no rules cannot mean 'active')", () => {
+    const rules: ActiveRuleInput[] = [
+      {
+        key: "tenure",
+        label: "Стаж",
+        type: "MIN_YEAR",
+        config: { min: 2 },
+        enabled: false,
+      },
+    ];
+
+    const result = evaluateActive(rules, BASE_FACTS, { hasRole: true });
+
+    expect(result.total).toBe(0);
+    expect(result.passed).toBe(false);
+    expect(result.failed).toHaveLength(0);
+    expect(result.missing).toHaveLength(0);
+  });
+
+  it("an optional rule that fails does NOT block passed", () => {
+    const rules: ActiveRuleInput[] = [
+      {
+        key: "tenure",
+        label: "Стаж",
+        type: "MIN_YEAR",
+        config: { min: 2 },
+        enabled: true,
+      },
+      {
+        key: "activity",
+        label: "Активность",
+        type: "HAS_ROLE",
+        config: {},
+        enabled: true,
+        optional: true,
+      },
+    ];
+    // tenure passes (3 ≥ 2); optional HAS_ROLE fails (no role) but must not block.
+    const result = evaluateActive(rules, BASE_FACTS, { hasRole: false });
+
+    expect(result.passed).toBe(true);
+    expect(result.failed.map((r) => r.key)).toContain("activity");
+    expect(result.total).toBe(2);
+  });
+
+  it("an optional rule whose fact is missing does NOT block passed", () => {
+    const rules: ActiveRuleInput[] = [
+      {
+        key: "tenure",
+        label: "Стаж",
+        type: "MIN_YEAR",
+        config: { min: 2 },
+        enabled: true,
+      },
+      {
+        key: "retention",
+        label: "Retention",
+        type: "MIN_PERCENT",
+        factKey: "retention",
+        config: { min: 70 },
+        enabled: true,
+        optional: true,
+      },
+    ];
+    const facts: ProfileFacts = { ...BASE_FACTS, retention: null };
+
+    const result = evaluateActive(rules, facts, { hasRole: false });
+
+    expect(result.passed).toBe(true);
+    expect(result.missing.map((r) => r.key)).toContain("retention");
+    expect(result.total).toBe(2);
+  });
+
+  it("MIN_YEAR with config:{} (NaN min) does NOT block — misconfig must not lock out", () => {
+    const rules: ActiveRuleInput[] = [
+      {
+        key: "tenure",
+        label: "Стаж",
+        type: "MIN_YEAR",
+        config: {}, // no min → Number(undefined) is NaN
+        enabled: true,
+      },
+    ];
+    // tenureYear is present (3); with a non-finite threshold the predicate is treated as ok.
+    const result = evaluateActive(rules, BASE_FACTS, { hasRole: false });
+
+    expect(result.passed).toBe(true);
+    expect(result.failed).toHaveLength(0);
+    expect(result.missing).toHaveLength(0);
+    expect(result.total).toBe(1);
+  });
 });

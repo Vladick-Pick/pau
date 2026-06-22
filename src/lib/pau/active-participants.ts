@@ -12,6 +12,8 @@ import {
   listMembers,
   getMember,
   roleIdsForProfile,
+  roleIdsByProfile,
+  readinessByProfile,
   getReadiness,
   getNote,
 } from "@/lib/pau/active-store";
@@ -71,37 +73,38 @@ export function rulesToInputs(rules: ActiveRule[]): ActiveRuleInput[] {
 export async function getActiveParticipants(
   clubId: string
 ): Promise<ActiveParticipantSummary[]> {
-  const rules = rulesToInputs(await getClubRules(clubId));
-  const members = await listMembers(clubId, { stateCode: "active" });
+  const [rules, members, roleMap, readinessMap] = await Promise.all([
+    getClubRules(clubId).then(rulesToInputs),
+    listMembers(clubId, { stateCode: "active" }),
+    roleIdsByProfile(clubId),
+    readinessByProfile(clubId),
+  ]);
 
-  const summaries = await Promise.all(
-    members.map(async (m) => {
-      const facts = rowToFacts(m);
-      const roleIds = await roleIdsForProfile(clubId, m.profileId);
-      const hasRole = roleIds.length > 0;
-      const ev = evaluateActive(rules, facts, { hasRole });
-      const readinessRows = await getReadiness(m.profileId);
+  const summaries: ActiveParticipantSummary[] = members.map((m) => {
+    const facts = rowToFacts(m);
+    const roleIds = roleMap.get(m.profileId) ?? [];
+    const hasRole = roleIds.length > 0;
+    const ev = evaluateActive(rules, facts, { hasRole });
+    const readinessRows = readinessMap.get(m.profileId) ?? [];
 
-      const summary: ActiveParticipantSummary = {
-        profileId: m.profileId,
-        displayName: m.displayName ?? null,
-        stateCode: m.stateCode ?? null,
-        facts,
-        evaluation: {
-          passed: ev.passed,
-          failedKeys: ev.failed.map((r) => r.key),
-          missingKeys: ev.missing.map((r) => r.key),
-          total: ev.total,
-        },
-        roleIds,
-        readiness: readinessRows.map((r) => ({
-          formatId: r.formatId,
-          readiness: r.readiness,
-        })),
-      };
-      return summary;
-    })
-  );
+    return {
+      profileId: m.profileId,
+      displayName: m.displayName ?? null,
+      stateCode: m.stateCode ?? null,
+      facts,
+      evaluation: {
+        passed: ev.passed,
+        failedKeys: ev.failed.map((r) => r.key),
+        missingKeys: ev.missing.map((r) => r.key),
+        total: ev.total,
+      },
+      roleIds,
+      readiness: readinessRows.map((r) => ({
+        formatId: r.formatId,
+        readiness: r.readiness,
+      })),
+    };
+  });
 
   // Sort: passed first, then by displayName
   summaries.sort((a, b) => {
@@ -123,13 +126,16 @@ export async function getParticipantDetail(
   const m = await getMember(clubId, profileId);
   if (!m) return null;
 
-  const rules = rulesToInputs(await getClubRules(clubId));
+  const [rules, roleIds, readinessRows, note] = await Promise.all([
+    getClubRules(clubId).then(rulesToInputs),
+    roleIdsForProfile(clubId, profileId),
+    getReadiness(clubId, profileId),
+    getNote(clubId, profileId),
+  ]);
+
   const facts = rowToFacts(m);
-  const roleIds = await roleIdsForProfile(clubId, profileId);
   const hasRole = roleIds.length > 0;
   const ev = evaluateActive(rules, facts, { hasRole });
-  const readinessRows = await getReadiness(profileId);
-  const note = await getNote(profileId);
 
   return {
     profileId: m.profileId,

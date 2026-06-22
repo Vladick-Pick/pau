@@ -60,6 +60,7 @@ export async function syncClub(
 
   await getOrSeedClub(clubId, clubName ?? clubId);
 
+  // TODO: refine member pool by category (Участник) once the category code is confirmed
   const members = await client.collectProfiles({
     workspaceId: clubId,
     state: ["active"],

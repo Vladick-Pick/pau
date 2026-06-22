@@ -169,7 +169,7 @@ describe("syncClub — reconcile-not-clobber", () => {
     // Re-run sync — should not wipe the note
     await syncClub(CLUB_ID, makeHappyStub(), "Тестовый клуб");
 
-    const note = await getNote(memberId);
+    const note = await getNote(CLUB_ID, memberId);
     expect(note).toBe("keep me");
   });
 });

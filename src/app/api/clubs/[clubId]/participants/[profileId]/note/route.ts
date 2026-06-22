@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { requireApiRole } from "@/lib/api/auth";
+import { mutationErrorResponse } from "@/lib/api/mutation-error";
 import { setNote } from "@/lib/pau/active-store";
 
 const noteSchema = z.object({
@@ -16,18 +17,19 @@ export async function PUT(
     return auth.response;
   }
 
+  const { clubId, profileId } = await context.params;
+
+  let note: string;
   try {
-    const { clubId, profileId } = await context.params;
-    const body = noteSchema.parse(await request.json());
-    await setNote(clubId, profileId, body.note);
+    ({ note } = noteSchema.parse(await request.json()));
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  try {
+    await setNote(clubId, profileId, note);
     return Response.json({ data: { ok: true } });
   } catch (error) {
-    return Response.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Note update failed",
-      },
-      { status: 400 }
-    );
+    return mutationErrorResponse(error);
   }
 }
