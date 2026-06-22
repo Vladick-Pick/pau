@@ -7,4 +7,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  test: {
+    env: {
+      DATABASE_URL:
+        "postgresql://pau:pau@localhost:54329/pau?schema=public",
+    },
+  },
 });
