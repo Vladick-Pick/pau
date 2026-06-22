@@ -110,7 +110,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_sync" } } });
-  await prisma.$disconnect();
 });
 
 // ── Tests ──────────────────────────────────────────────────────────────────────

@@ -47,7 +47,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_route" } } });
-  await prisma.$disconnect();
 });
 
 // ── GET /api/clubs ─────────────────────────────────────────────────────────────

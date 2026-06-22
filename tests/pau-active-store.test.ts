@@ -29,7 +29,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_store" } } });
-  await prisma.$disconnect();
 });
 
 describe("getOrSeedClub", () => {

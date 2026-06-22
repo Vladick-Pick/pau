@@ -12,5 +12,10 @@ export default defineConfig({
       DATABASE_URL:
         "postgresql://pau:pau@localhost:54329/pau?schema=public",
     },
+    // DB integration tests hit a shared Postgres and can be slow under load;
+    // give them headroom so they don't hit the 5s default when the machine is
+    // busy. Parallel forks are kept so unit-test module mocks stay isolated.
+    testTimeout: 30000,
+    hookTimeout: 30000,
   },
 });

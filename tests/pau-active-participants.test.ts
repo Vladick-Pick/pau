@@ -76,7 +76,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_ap" } } });
-  await prisma.$disconnect();
 });
 
 describe("getActiveParticipants", () => {
