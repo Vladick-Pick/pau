@@ -2,7 +2,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { DEFAULT_ACTIVE_RULES } from "@/lib/pau/active-defaults";
 import type { ProfileFacts, ProfileDossier, ParticipationEvent } from "@/lib/profile/types";
-import type { ActiveRule, ActiveRole, FormatReadiness, MemberProfile } from "@prisma/client";
+import type { ActiveRule, ActiveRole, Club, FormatReadiness, MemberProfile } from "@prisma/client";
+
+// ── Clubs ─────────────────────────────────────────────────────────────────────
+
+export async function listClubs(): Promise<Club[]> {
+  return prisma.club.findMany({ orderBy: { name: "asc" } });
+}
 
 // ── Club seeding ──────────────────────────────────────────────────────────────
 
