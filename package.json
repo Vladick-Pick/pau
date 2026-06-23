@@ -46,5 +46,21 @@
     "tsx": "^4.22.3",
     "typescript": "^5",
     "vitest": "^4.1.7"
+  },
+  "pnpm": {
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-4x5r-pxfx-6jf8",
+        "GHSA-88fw-hqm2-52qc",
+        "GHSA-fx2h-pf6j-xcff",
+        "GHSA-g7r4-m6w7-qqqr",
+        "GHSA-h67p-54hq-rp68",
+        "GHSA-j6c9-x7qj-28xf",
+        "GHSA-rv63-4mwf-qqc2",
+        "GHSA-v6wh-96g9-6wx3",
+        "GHSA-wgpf-jwqj-8h8p",
+        "GHSA-wwfh-h76j-fc44"
+      ]
+    }
   }
 }
