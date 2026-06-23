@@ -2,6 +2,16 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    serverActions: {
+      allowedOrigins: [
+        process.env.PAU_PUBLIC_HOST ?? "pau.claricont.com",
+        // Some production browser/form submissions arrive through Traefik with
+        // Origin: null; keep this scoped to Server Actions (login/logout only).
+        "null",
+      ],
+    },
+  },
   async headers() {
     return [
       {
