@@ -531,7 +531,9 @@ export function ParticipantInspector({
                       className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5"
                     >
                       <div>
-                        <p className="text-[13px] font-medium">{r.formatId}</p>
+                        <p className="text-[13px] font-medium">
+                          {r.formatName || r.formatId}
+                        </p>
                         <p className="text-[11px] text-muted-foreground">
                           {readinessLabel(r.readiness)}
                         </p>
@@ -562,11 +564,11 @@ export function ParticipantInspector({
               <div className="grid gap-5">
                 <div>
                   <h3 className="mb-3 text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Участие в мероприятиях
+                    История посещения форматов
                   </h3>
                   {detail.participation.length === 0 ? (
                     <p className="text-[12px] text-muted-foreground">
-                      История участия пуста
+                      История посещения форматов пуста
                     </p>
                   ) : (
                     <div className="grid gap-3">

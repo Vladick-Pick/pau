@@ -6,7 +6,6 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import type { Club } from "./types";
 
@@ -17,6 +16,9 @@ type Props = {
 };
 
 export function ClubSwitcher({ clubs, selectedClubId, onSelect }: Props) {
+  const selectedClub =
+    clubs.find((club) => club.id === selectedClubId) ?? null;
+
   if (clubs.length === 0) {
     return (
       <span className="text-xs text-muted-foreground">Загрузка клубов...</span>
@@ -31,7 +33,9 @@ export function ClubSwitcher({ clubs, selectedClubId, onSelect }: Props) {
       }}
     >
       <SelectTrigger className="h-8 w-auto min-w-36 max-w-52 text-xs">
-        <SelectValue placeholder="Выберите клуб" />
+        <span className="truncate">
+          {selectedClub?.name ?? "Выберите клуб"}
+        </span>
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>

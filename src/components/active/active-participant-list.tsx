@@ -393,7 +393,7 @@ export function ActiveParticipantList({
                         <ReadinessPip
                           key={r.formatId}
                           readiness={r.readiness}
-                          label={r.formatId}
+                          label={r.formatName || r.formatId}
                         />
                       ))
                     )}

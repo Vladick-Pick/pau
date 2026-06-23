@@ -142,7 +142,14 @@ function reducer(state: State, action: Action): State {
                         ? { ...r, readiness: action.readiness }
                         : r
                     )
-                  : [...p.readiness, { formatId: action.formatId, readiness: action.readiness }],
+                  : [
+                      ...p.readiness,
+                      {
+                        formatId: action.formatId,
+                        formatName: action.formatId,
+                        readiness: action.readiness,
+                      },
+                    ],
               }
             : p
         ),
@@ -160,7 +167,11 @@ function reducer(state: State, action: Action): State {
                     )
                   : [
                       ...state.detail.readiness,
-                      { formatId: action.formatId, readiness: action.readiness },
+                      {
+                        formatId: action.formatId,
+                        formatName: action.formatId,
+                        readiness: action.readiness,
+                      },
                     ],
               }
             : state.detail,

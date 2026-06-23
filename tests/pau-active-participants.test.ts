@@ -5,6 +5,7 @@ import {
   upsertMemberProfile,
   createRole,
   assignRole,
+  setReadiness,
 } from "@/lib/pau/active-store";
 import {
   getActiveParticipants,
@@ -14,6 +15,8 @@ import {
 const describeDb = process.env.CI ? describe.skip : describe;
 
 const CLUB = "ws_test_ap";
+const FORMAT_GUEST = "test-guest-meeting-ap";
+const FORMAT_WORKING = "test-working-group-ap";
 
 const DOSSIER = {
   company: "TestCo",
@@ -35,9 +38,26 @@ const PARTICIPATION = [
 beforeAll(async () => {
   // Clean up any leftover state
   await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_ap" } } });
+  await prisma.eventFormat.deleteMany({
+    where: { slug: { in: [FORMAT_GUEST, FORMAT_WORKING] } },
+  });
 
   // Seed club (seeds default rules: tenure+payment ENABLED, retention+attendance+activity DISABLED)
   await getOrSeedClub(CLUB, "Test");
+  await prisma.eventFormat.createMany({
+    data: [
+      {
+        slug: FORMAT_GUEST,
+        name: "Гостевая встреча",
+        description: "Тестовый формат гостевой встречи",
+      },
+      {
+        slug: FORMAT_WORKING,
+        name: "Рабочая группа",
+        description: "Тестовый формат рабочей группы",
+      },
+    ],
+  });
 
   // Member A: tenureYear=3, paymentPhase="mid" → should PASS enabled rules
   await upsertMemberProfile({
@@ -78,6 +98,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.club.deleteMany({ where: { id: { startsWith: "ws_test_ap" } } });
+  await prisma.eventFormat.deleteMany({
+    where: { slug: { in: [FORMAT_GUEST, FORMAT_WORKING] } },
+  });
 });
 
 describeDb("getActiveParticipants", () => {
@@ -128,6 +151,25 @@ describeDb("getActiveParticipants", () => {
     expect(Array.isArray(a.readiness)).toBe(true);
   });
 
+  it("summaries include every event format as unmarked before manual readiness exists", async () => {
+    const summaries = await getActiveParticipants(CLUB);
+    const a = summaries.find((s) => s.profileId === "pA")!;
+    expect(a.readiness).toEqual(
+      expect.arrayContaining([
+        {
+          formatId: FORMAT_GUEST,
+          formatName: "Гостевая встреча",
+          readiness: "UNMARKED",
+        },
+        {
+          formatId: FORMAT_WORKING,
+          formatName: "Рабочая группа",
+          readiness: "UNMARKED",
+        },
+      ])
+    );
+  });
+
   it("after assigning a role to A, A.roleIds is non-empty", async () => {
     const role = await createRole(CLUB, "Спикер");
     await assignRole(CLUB, role.id, "pA");
@@ -155,6 +197,26 @@ describeDb("getParticipantDetail", () => {
     expect(detail!.note).toBeNull(); // no note set
     expect(Array.isArray(detail!.rules)).toBe(true);
     expect(detail!.rules.length).toBeGreaterThan(0);
+  });
+
+  it("detail merges saved readiness with the full event format list", async () => {
+    await setReadiness(CLUB, "pA", FORMAT_GUEST, "READY");
+
+    const detail = await getParticipantDetail(CLUB, "pA");
+    expect(detail!.readiness).toEqual(
+      expect.arrayContaining([
+        {
+          formatId: FORMAT_GUEST,
+          formatName: "Гостевая встреча",
+          readiness: "READY",
+        },
+        {
+          formatId: FORMAT_WORKING,
+          formatName: "Рабочая группа",
+          readiness: "UNMARKED",
+        },
+      ])
+    );
   });
 
   it("detail evaluation matches summary evaluation for pA", async () => {

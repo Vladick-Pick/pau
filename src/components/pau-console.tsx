@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeftIcon,
@@ -454,6 +455,15 @@ export function PauConsole({
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip="Участники"
+                    render={<Link href="/active-participants" />}
+                  >
+                    <UsersIcon />
+                    <span>Участники</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

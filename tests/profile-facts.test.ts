@@ -112,20 +112,64 @@ describe("deriveDossier", () => {
 });
 
 describe("deriveParticipation", () => {
-  it("returns only forum_attended events, excludes membership.payment", () => {
-    const participation = deriveParticipation(typedEvents);
+  const participationEvents: BusinessEvent[] = [
+    {
+      id: "format-old",
+      event_type: "community.event_attended",
+      event_type_label: "Посещение мероприятия",
+      category: "format",
+      title: "Гостевая встреча",
+      happened_at: "2024-02-10",
+      observed_at: "2024-02-10",
+      current_value: { event_name: "Гостевая встреча" },
+      attributes: {},
+    },
+    {
+      id: "format-new",
+      event_type: "community.event_attended",
+      event_type_label: "Посещение мероприятия",
+      category: "format",
+      title: "Рабочая группа",
+      happened_at: "2024-04-12",
+      observed_at: "2024-04-12",
+      current_value: { event_name: "Рабочая группа" },
+      attributes: {},
+    },
+    {
+      id: "forum",
+      event_type: "community.forum_attended",
+      event_type_label: "Посещение форума",
+      category: "forum",
+      title: "Форум Ф19",
+      happened_at: "2024-05-20",
+      observed_at: "2024-05-20",
+      current_value: { event_name: "Форум Ф19" },
+      attributes: {},
+    },
+    {
+      id: "payment",
+      event_type: "membership.payment",
+      event_type_label: "Оплата",
+      category: "membership",
+      title: "Оплата",
+      observed_at: "2024-06-01",
+      current_value: {},
+      attributes: {},
+    },
+  ];
+
+  it("returns only format visit events, excluding forums and payments", () => {
+    const participation = deriveParticipation(participationEvents);
     expect(participation).toHaveLength(2);
+    expect(participation.map((e) => e.title)).toEqual([
+      "Рабочая группа",
+      "Гостевая встреча",
+    ]);
   });
 
-  it("sorts by date DESC — first item title contains Ф19", () => {
-    const participation = deriveParticipation(typedEvents);
-    expect(participation[0].title).toContain("Ф19");
-  });
-
-  it("excludes the payment event entirely", () => {
-    const participation = deriveParticipation(typedEvents);
-    const hasPay = participation.some((e) => e.title === "Оплата");
-    expect(hasPay).toBe(false);
+  it("sorts format visits by date descending", () => {
+    const participation = deriveParticipation(participationEvents);
+    expect(participation[0].date).toBe("2024-04-12");
   });
 
   it("returns [] for empty events", () => {

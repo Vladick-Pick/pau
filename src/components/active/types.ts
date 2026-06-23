@@ -21,7 +21,13 @@ export interface ActiveParticipantSummary {
     total: number;
   };
   roleIds: string[];
-  readiness: Array<{ formatId: string; readiness: string }>;
+  readiness: ReadinessEntry[];
+}
+
+export interface ReadinessEntry {
+  formatId: string;
+  formatName: string;
+  readiness: string;
 }
 
 // Shape returned by GET /api/clubs/[clubId]/participants/[profileId]

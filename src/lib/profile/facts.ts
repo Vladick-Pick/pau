@@ -282,7 +282,6 @@ export function deriveDossier(profile: PublicProfile): ProfileDossier {
 // ──────────────────────────────────────────────────────────────
 
 const PARTICIPATION_EVENT_TYPES = new Set([
-  "community.forum_attended",
   "community.event_attended",
 ]);
 

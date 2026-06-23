@@ -10,7 +10,7 @@ describe("auth credentials", () => {
     vi.unstubAllEnvs();
   });
 
-  it("authenticates an active database user when a login is provided", async () => {
+  it("authenticates an active database user when the selected role matches", async () => {
     const findActiveUserByCredentials = vi.fn(async () => ({
       role: "MANAGER" as const,
       userName: "Мария",
@@ -18,7 +18,7 @@ describe("auth credentials", () => {
 
     await expect(
       resolveSessionCredentials(
-        { login: "maria", password: "correct-password", role: "ADMIN" },
+        { login: "maria", password: "correct-password", role: "MANAGER" },
         { findActiveUserByCredentials }
       )
     ).resolves.toEqual({
@@ -29,6 +29,20 @@ describe("auth credentials", () => {
       login: "maria",
       password: "correct-password",
     });
+  });
+
+  it("rejects a database user when the selected role does not match", async () => {
+    const findActiveUserByCredentials = vi.fn(async () => ({
+      role: "ADMIN" as const,
+      userName: "Администратор",
+    }));
+
+    await expect(
+      resolveSessionCredentials(
+        { login: "admin", password: "correct-password", role: "MANAGER" },
+        { findActiveUserByCredentials }
+      )
+    ).resolves.toBeNull();
   });
 
   it("does not fall back to role passwords after a failed login-based attempt", async () => {

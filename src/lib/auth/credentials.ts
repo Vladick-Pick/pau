@@ -32,9 +32,11 @@ export async function resolveSessionCredentials(
   }
 
   if (login) {
-    return options.findActiveUserByCredentials
-      ? options.findActiveUserByCredentials({ login, password })
+    const parsedRole = parseRole(input.role);
+    const session = options.findActiveUserByCredentials
+      ? await options.findActiveUserByCredentials({ login, password })
       : null;
+    return session && session.role === parsedRole ? session : null;
   }
 
   return resolvePasswordRole(input.role, password);

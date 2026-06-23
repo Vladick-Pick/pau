@@ -58,7 +58,12 @@ export function SummaryStats({ participants, loading }: Props) {
   const total = participants.length;
   const active = participants.filter((p) => p.evaluation.passed).length;
   const readyForGuest = participants.filter((p) =>
-    p.readiness.some((r) => r.formatId === "guest" && r.readiness === "READY")
+    p.readiness.some(
+      (r) =>
+        r.readiness === "READY" &&
+        (r.formatId === "guest-meeting" ||
+          r.formatName.toLowerCase().includes("гост"))
+    )
   ).length;
   const gaps = participants.filter(
     (p) =>
