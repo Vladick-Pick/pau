@@ -8,8 +8,6 @@ import {
 } from "@/lib/auth/session";
 import { getSessionSecret } from "@/lib/env";
 
-export { resolvePasswordRole } from "./credentials";
-
 export const sessionCookieName = "pau_session";
 
 const roleRank: Record<SessionRole, number> = {

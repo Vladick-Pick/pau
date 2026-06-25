@@ -87,6 +87,8 @@ import type {
 export { hashPassword, verifyPassword } from "../auth/passwords";
 
 const DEFAULT_FORMAT_SLUG = "guest-meeting";
+const DEFAULT_ADMIN_LOGIN = "vladislavbogdan";
+const DEFAULT_ADMIN_DISPLAY_NAME = "Владислав";
 const BITRIX_DEAL_CLUB_BRANCH_FIELD = "UF_CRM_DEAL_FILIAL_KLUBA__VYBOR_";
 const BITRIX_DEAL_CLUB_CUSTOMER_FIELD = "UF_CRM_1747682957";
 const BITRIX_DEAL_ENRICHMENT_FIELDS = {
@@ -1266,17 +1268,43 @@ export async function updateUser(input: {
   return mapUser(user);
 }
 
+type ConfiguredAdminUser = {
+  login: string;
+  displayName: string;
+  password: string;
+};
+
 export async function findActiveUserByCredentials(input: {
   login: string;
   password: string;
 }) {
-  if (!(await canUseDatabase(getIntegrationStatus()))) {
+  const login = input.login.trim();
+  if (!login || !input.password) {
     return null;
   }
 
-  const user = await prisma.appUser.findUnique({
-    where: { login: input.login },
-  });
+  const configuredAdmin = getConfiguredAdminUser();
+  const databaseAvailable = await canUseDatabase(getIntegrationStatus());
+  if (configuredAdmin && sameLogin(configuredAdmin.login, login)) {
+    assertProductionAdminPassword(configuredAdmin);
+
+    if (input.password === configuredAdmin.password) {
+      if (databaseAvailable) {
+        await ensureConfiguredAdminUser(configuredAdmin);
+      }
+
+      return {
+        role: "ADMIN" as const,
+        userName: configuredAdmin.displayName,
+      };
+    }
+  }
+
+  if (!databaseAvailable) {
+    return null;
+  }
+
+  const user = await findUserByLogin(login);
   if (!user?.active) {
     return null;
   }
@@ -1289,6 +1317,86 @@ export async function findActiveUserByCredentials(input: {
     role: user.role,
     userName: user.displayName,
   };
+}
+
+async function ensureConfiguredAdminUser(configured: ConfiguredAdminUser) {
+  const existing = await findUserByLogin(configured.login);
+  if (!existing) {
+    await prisma.appUser.create({
+      data: {
+        login: configured.login,
+        displayName: configured.displayName,
+        role: "ADMIN",
+        active: true,
+        passwordHash: await hashPassword(configured.password),
+      },
+    });
+    return;
+  }
+
+  const passwordMatches = await verifyPassword(
+    configured.password,
+    existing.passwordHash
+  );
+  if (
+    existing.login === configured.login &&
+    existing.displayName === configured.displayName &&
+    existing.role === "ADMIN" &&
+    existing.active &&
+    passwordMatches
+  ) {
+    return;
+  }
+
+  await prisma.appUser.update({
+    where: { id: existing.id },
+    data: {
+      login: configured.login,
+      displayName: configured.displayName,
+      role: "ADMIN",
+      active: true,
+      ...(passwordMatches
+        ? {}
+        : { passwordHash: await hashPassword(configured.password) }),
+    },
+  });
+}
+
+function getConfiguredAdminUser(): ConfiguredAdminUser | null {
+  const password = getOptionalEnv("PAU_ADMIN_PASSWORD");
+  if (!password) {
+    return null;
+  }
+
+  return {
+    login: getOptionalEnv("PAU_ADMIN_LOGIN") ?? DEFAULT_ADMIN_LOGIN,
+    displayName:
+      getOptionalEnv("PAU_ADMIN_DISPLAY_NAME") ?? DEFAULT_ADMIN_DISPLAY_NAME,
+    password,
+  };
+}
+
+function assertProductionAdminPassword(configured: ConfiguredAdminUser) {
+  if (process.env.NODE_ENV !== "production" || configured.password.length >= 16) {
+    return;
+  }
+
+  throw new Error("PAU_ADMIN_PASSWORD must be at least 16 characters in production");
+}
+
+async function findUserByLogin(login: string) {
+  return prisma.appUser.findFirst({
+    where: {
+      login: {
+        equals: login,
+        mode: "insensitive",
+      },
+    },
+  });
+}
+
+function sameLogin(left: string, right: string) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
 export function getIntegrationStatus(): PauIntegrationStatus {

@@ -1,16 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import {
-  resolvePasswordRole,
-  resolveSessionCredentials,
-} from "../src/lib/auth/credentials";
+import { resolveSessionCredentials } from "../src/lib/auth/credentials";
 
 describe("auth credentials", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("authenticates an active database user when the selected role matches", async () => {
+  it("authenticates an active database user without selecting a role", async () => {
     const findActiveUserByCredentials = vi.fn(async () => ({
       role: "MANAGER" as const,
       userName: "Мария",
@@ -18,7 +11,7 @@ describe("auth credentials", () => {
 
     await expect(
       resolveSessionCredentials(
-        { login: "maria", password: "correct-password", role: "MANAGER" },
+        { login: "maria", password: "correct-password" },
         { findActiveUserByCredentials }
       )
     ).resolves.toEqual({
@@ -31,7 +24,7 @@ describe("auth credentials", () => {
     });
   });
 
-  it("rejects a database user when the selected role does not match", async () => {
+  it("uses the user's stored role instead of a role submitted by the form", async () => {
     const findActiveUserByCredentials = vi.fn(async () => ({
       role: "ADMIN" as const,
       userName: "Администратор",
@@ -42,7 +35,10 @@ describe("auth credentials", () => {
         { login: "admin", password: "correct-password", role: "MANAGER" },
         { findActiveUserByCredentials }
       )
-    ).resolves.toBeNull();
+    ).resolves.toEqual({
+      role: "ADMIN",
+      userName: "Администратор",
+    });
   });
 
   it("does not fall back to role passwords after a failed login-based attempt", async () => {
@@ -56,21 +52,9 @@ describe("auth credentials", () => {
     ).resolves.toBeNull();
   });
 
-  it("keeps role-password fallback for development access when login is blank", async () => {
+  it("rejects blank-login role-password fallback", async () => {
     await expect(
       resolveSessionCredentials({ login: "", password: "manager", role: "MANAGER" })
-    ).resolves.toEqual({
-      role: "MANAGER",
-      userName: "Менеджер",
-    });
-  });
-
-  it("rejects short role fallback passwords in production", () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("PAU_ADMIN_PASSWORD", "short");
-
-    expect(() => resolvePasswordRole("ADMIN", "short")).toThrow(
-      "PAU_ADMIN_PASSWORD must be at least 16 characters in production"
-    );
+    ).resolves.toBeNull();
   });
 });

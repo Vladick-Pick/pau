@@ -8,10 +8,9 @@ import { findActiveUserByCredentials } from "@/lib/pau/dashboard";
 
 export async function loginAction(formData: FormData) {
   const login = String(formData.get("login") ?? "");
-  const role = String(formData.get("role") ?? "");
   const password = String(formData.get("password") ?? "");
   const session = await resolveSessionCredentials(
-    { login, role, password },
+    { login, password },
     { findActiveUserByCredentials }
   );
 

@@ -1,4 +1,3 @@
-import { getOptionalEnv } from "../env";
 import type { SessionRole } from "./session";
 
 export type CredentialSession = {
@@ -9,7 +8,7 @@ export type CredentialSession = {
 type ResolveSessionCredentialsInput = {
   login: string | null;
   password: string | null;
-  role: string | null;
+  role?: string | null;
 };
 
 type FindActiveUserByCredentials = (input: {
@@ -27,75 +26,11 @@ export async function resolveSessionCredentials(
 ): Promise<CredentialSession | null> {
   const login = input.login?.trim() ?? "";
   const password = input.password ?? "";
-  if (!password) {
+  if (!login || !password) {
     return null;
   }
 
-  if (login) {
-    const parsedRole = parseRole(input.role);
-    const session = options.findActiveUserByCredentials
-      ? await options.findActiveUserByCredentials({ login, password })
-      : null;
-    return session && session.role === parsedRole ? session : null;
-  }
-
-  return resolvePasswordRole(input.role, password);
-}
-
-export function resolvePasswordRole(
-  role: string | null,
-  password: string | null
-): CredentialSession | null {
-  const parsedRole = parseRole(role);
-  if (!parsedRole || !password) {
-    return null;
-  }
-
-  const expectedPassword = getPasswordForRole(parsedRole);
-  if (password !== expectedPassword) {
-    return null;
-  }
-
-  return {
-    role: parsedRole,
-    userName: roleName(parsedRole),
-  };
-}
-
-function parseRole(role: string | null): SessionRole | null {
-  if (role === "ADMIN" || role === "MANAGER" || role === "VIEWER") {
-    return role;
-  }
-
-  return null;
-}
-
-function getPasswordForRole(role: SessionRole): string {
-  const envName = `PAU_${role}_PASSWORD`;
-  const configured = getOptionalEnv(envName);
-  if (configured) {
-    if (process.env.NODE_ENV === "production" && configured.length < 16) {
-      throw new Error(`${envName} must be at least 16 characters in production`);
-    }
-
-    return configured;
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(`${envName} is required in production`);
-  }
-
-  return role.toLowerCase();
-}
-
-function roleName(role: SessionRole): string {
-  if (role === "ADMIN") {
-    return "Администратор";
-  }
-
-  if (role === "MANAGER") {
-    return "Менеджер";
-  }
-
-  return "Наблюдатель";
+  return options.findActiveUserByCredentials
+    ? await options.findActiveUserByCredentials({ login, password })
+    : null;
 }
