@@ -19,6 +19,7 @@ import {
   Loader2Icon,
   LogOutIcon,
   PencilIcon,
+  PlusIcon,
   RefreshCwIcon,
   Settings2Icon,
   SparklesIcon,
@@ -92,6 +93,15 @@ import type {
 } from "@/lib/pau/types";
 import { summarizeFormatCard } from "@/lib/pau/format-cards";
 import {
+  createFormatDraft,
+  formatDraftToPatch,
+  removeFormatDraft,
+  toFormatDraft,
+  updateFormatDraft as updateFormatDraftByKey,
+  validateFormatDrafts,
+  type FormatDraft,
+} from "@/lib/pau/format-drafts";
+import {
   MAX_REPORT_TRANSCRIPT_CHARS,
   computeEventAttendanceSummary,
   getLatestPastEvent,
@@ -116,11 +126,6 @@ type ActionNotice = {
   title: string;
   message: string;
 } | null;
-
-type FormatDraft = Omit<PauFormat, "bitrixEventTypeIds" | "matchingRules"> & {
-  bitrixEventTypeIdsText: string;
-  matchingRulesText: string;
-};
 
 type ActiveDecision = NonNullable<PauEventParticipant["activeDecision"]>;
 
@@ -151,7 +156,7 @@ export function PauConsole({
   const [formatDrafts, setFormatDrafts] = useState(() =>
     initialData.formats.map(toFormatDraft)
   );
-  const [editingFormatSlug, setEditingFormatSlug] = useState<string | null>(null);
+  const [editingFormatKey, setEditingFormatKey] = useState<string | null>(null);
   const [expandedHistoryEventIds, setExpandedHistoryEventIds] = useState<Set<string>>(
     () => new Set(initialData.pastEvents[0]?.id ? [initialData.pastEvents[0].id] : [])
   );
@@ -324,6 +329,11 @@ export function PauConsole({
 
   function saveFormats() {
     runAction(async () => {
+      const validationError = validateFormatDrafts(formatDrafts);
+      if (validationError) {
+        throw new Error(validationError);
+      }
+
       const response = await fetch("/api/formats", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -333,7 +343,7 @@ export function PauConsole({
       if (!response.ok) {
         throw new Error(body.error ?? "Format update failed");
       }
-      setEditingFormatSlug(null);
+      setEditingFormatKey(null);
 
       return {
         tone: "default",
@@ -343,25 +353,42 @@ export function PauConsole({
     });
   }
 
-  function deleteFormatAction(slug: string) {
-    if (!window.confirm(`Удалить формат ${slug}?`)) {
+  function addFormatDraftAction() {
+    const draftKey = crypto.randomUUID();
+    setFormatDrafts((current) => [...current, createFormatDraft(current, draftKey)]);
+    setEditingFormatKey(draftKey);
+  }
+
+  function deleteFormatAction(draftKey: string) {
+    const draft = formatDrafts.find((format) => format.draftKey === draftKey);
+    if (!draft) {
+      return;
+    }
+
+    if (draft.isNew) {
+      setFormatDrafts((current) => removeFormatDraft(current, draftKey));
+      setEditingFormatKey((current) => (current === draftKey ? null : current));
+      return;
+    }
+
+    if (!window.confirm(`Удалить формат ${draft.slug}?`)) {
       return;
     }
 
     runAction(async () => {
-      const response = await fetch(`/api/formats/${slug}`, {
+      const response = await fetch(`/api/formats/${encodeURIComponent(draft.slug)}`, {
         method: "DELETE",
       });
       const body = await response.json();
       if (!response.ok) {
         throw new Error(body.error ?? "Format deletion failed");
       }
-      setEditingFormatSlug(null);
+      setEditingFormatKey(null);
 
       return {
         tone: "default",
         title: "Формат удален",
-        message: body.format?.name ?? slug,
+        message: body.format?.name ?? draft.slug,
       };
     });
   }
@@ -409,11 +436,9 @@ export function PauConsole({
     });
   }
 
-  function updateFormatDraft(slug: string, patch: Partial<FormatDraft>) {
+  function updateFormatDraft(draftKey: string, patch: Partial<FormatDraft>) {
     setFormatDrafts((current) =>
-      current.map((format) =>
-        format.slug === slug ? { ...format, ...patch } : format
-      )
+      updateFormatDraftByKey(current, draftKey, patch)
     );
   }
 
@@ -447,7 +472,7 @@ export function PauConsole({
                       tooltip={item.label}
                       onClick={() => {
                         setActiveSection(item.id);
-                        setEditingFormatSlug(null);
+                        setEditingFormatKey(null);
                       }}
                     >
                       <item.icon />
@@ -476,7 +501,7 @@ export function PauConsole({
                 tooltip="Доступы"
                 onClick={() => {
                   setActiveSection("access");
-                  setEditingFormatSlug(null);
+                  setEditingFormatKey(null);
                 }}
               >
                 <KeyRoundIcon />
@@ -579,12 +604,13 @@ export function PauConsole({
             <FormatsView
               canManage={canManage}
               drafts={formatDrafts}
-              editingSlug={editingFormatSlug}
+              editingKey={editingFormatKey}
               isPending={isPending}
-              onBack={() => setEditingFormatSlug(null)}
+              onAdd={addFormatDraftAction}
+              onBack={() => setEditingFormatKey(null)}
               onChange={updateFormatDraft}
               onDelete={deleteFormatAction}
-              onEdit={setEditingFormatSlug}
+              onEdit={setEditingFormatKey}
               onSave={saveFormats}
             />
           ) : null}
@@ -1433,8 +1459,9 @@ function ParticipantDetails({
 function FormatsView({
   canManage,
   drafts,
-  editingSlug,
+  editingKey,
   isPending,
+  onAdd,
   onBack,
   onChange,
   onDelete,
@@ -1443,18 +1470,21 @@ function FormatsView({
 }: {
   canManage: boolean;
   drafts: FormatDraft[];
-  editingSlug: string | null;
+  editingKey: string | null;
   isPending: boolean;
+  onAdd: () => void;
   onBack: () => void;
-  onChange: (slug: string, patch: Partial<FormatDraft>) => void;
-  onDelete: (slug: string) => void;
-  onEdit: (slug: string) => void;
+  onChange: (draftKey: string, patch: Partial<FormatDraft>) => void;
+  onDelete: (draftKey: string) => void;
+  onEdit: (draftKey: string) => void;
   onSave: () => void;
 }) {
   const editingFormat =
-    drafts.find((format) => format.slug === editingSlug) ?? null;
+    drafts.find((format) => format.draftKey === editingKey) ?? null;
 
   if (editingFormat) {
+    const fieldPrefix = editingFormat.draftKey;
+
     return (
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -1474,6 +1504,9 @@ function FormatsView({
                   {editingFormat.name}
                 </h2>
                 <Badge variant="outline">{editingFormat.slug}</Badge>
+                {editingFormat.isNew ? (
+                  <Badge variant="secondary">не сохранен</Badge>
+                ) : null}
               </div>
               <p className="text-sm text-muted-foreground">
                 Редактура линковки Bitrix, matching rules и prompts.
@@ -1495,28 +1528,50 @@ function FormatsView({
           </CardHeader>
           <CardContent>
             <FieldGroup>
+              {editingFormat.isNew ? (
+                <Field>
+                  <FieldLabel htmlFor={`${fieldPrefix}-slug`}>
+                    Код формата
+                  </FieldLabel>
+                  <Input
+                    disabled={!canManage}
+                    id={`${fieldPrefix}-slug`}
+                    onChange={(event) =>
+                      onChange(editingFormat.draftKey, {
+                        slug: event.target.value,
+                      })
+                    }
+                    placeholder="strategy-session"
+                    value={editingFormat.slug}
+                  />
+                  <FieldDescription>
+                    Латиница, цифры, дефисы или подчеркивания. После сохранения
+                    код не меняется.
+                  </FieldDescription>
+                </Field>
+              ) : null}
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-name`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-name`}>
                   Название
                 </FieldLabel>
                 <Input
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-name`}
+                  id={`${fieldPrefix}-name`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, { name: event.target.value })
+                    onChange(editingFormat.draftKey, { name: event.target.value })
                   }
                   value={editingFormat.name}
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-description`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-description`}>
                   Описание
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-description`}
+                  id={`${fieldPrefix}-description`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, {
+                    onChange(editingFormat.draftKey, {
                       description: event.target.value,
                     })
                   }
@@ -1524,14 +1579,14 @@ function FormatsView({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-sync-query`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-sync-query`}>
                   Поиск Bitrix по названию
                 </FieldLabel>
                 <Input
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-sync-query`}
+                  id={`${fieldPrefix}-sync-query`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, {
+                    onChange(editingFormat.draftKey, {
                       bitrixSyncTitleQuery: event.target.value,
                     })
                   }
@@ -1544,14 +1599,14 @@ function FormatsView({
                 </FieldDescription>
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-bitrix`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-bitrix`}>
                   Bitrix типы / категории
                 </FieldLabel>
                 <Input
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-bitrix`}
+                  id={`${fieldPrefix}-bitrix`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, {
+                    onChange(editingFormat.draftKey, {
                       bitrixEventTypeIdsText: event.target.value,
                     })
                   }
@@ -1559,14 +1614,14 @@ function FormatsView({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-rules`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-rules`}>
                   Matching rules
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-rules`}
+                  id={`${fieldPrefix}-rules`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, {
+                    onChange(editingFormat.draftKey, {
                       matchingRulesText: event.target.value,
                     })
                   }
@@ -1574,14 +1629,14 @@ function FormatsView({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-potential`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-potential`}>
                   Prompt: потенциальные
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-potential`}
+                  id={`${fieldPrefix}-potential`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, {
+                    onChange(editingFormat.draftKey, {
                       promptPotential: event.target.value,
                     })
                   }
@@ -1589,14 +1644,14 @@ function FormatsView({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-active`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-active`}>
                   Prompt: активные
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-active`}
+                  id={`${fieldPrefix}-active`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, {
+                    onChange(editingFormat.draftKey, {
                       promptActive: event.target.value,
                     })
                   }
@@ -1604,14 +1659,14 @@ function FormatsView({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-moderator`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-moderator`}>
                   Prompt: модератор
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-moderator`}
+                  id={`${fieldPrefix}-moderator`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, {
+                    onChange(editingFormat.draftKey, {
                       promptModerator: event.target.value,
                     })
                   }
@@ -1619,14 +1674,14 @@ function FormatsView({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${editingFormat.slug}-report`}>
+                <FieldLabel htmlFor={`${fieldPrefix}-report`}>
                   Prompt: отчет по transcript
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
-                  id={`${editingFormat.slug}-report`}
+                  id={`${fieldPrefix}-report`}
                   onChange={(event) =>
-                    onChange(editingFormat.slug, {
+                    onChange(editingFormat.draftKey, {
                       promptReport: event.target.value,
                     })
                   }
@@ -1649,6 +1704,15 @@ function FormatsView({
             Сохранённые форматы и их Bitrix-линковки
           </p>
         </div>
+        <Button
+          disabled={isPending || !canManage}
+          onClick={onAdd}
+          size="sm"
+          type="button"
+        >
+          <PlusIcon data-icon="inline-start" />
+          Добавить
+        </Button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
@@ -1657,7 +1721,7 @@ function FormatsView({
             canManage={canManage}
             format={format}
             isPending={isPending}
-            key={format.slug}
+            key={format.draftKey}
             onDelete={onDelete}
             onEdit={onEdit}
           />
@@ -1677,8 +1741,8 @@ function FormatSummaryCard({
   canManage: boolean;
   format: FormatDraft;
   isPending: boolean;
-  onDelete: (slug: string) => void;
-  onEdit: (slug: string) => void;
+  onDelete: (draftKey: string) => void;
+  onEdit: (draftKey: string) => void;
 }) {
   const summary = summarizeFormatCard(format);
   const visibleLinks = summary.bitrixLinks.slice(0, 3);
@@ -1688,12 +1752,15 @@ function FormatSummaryCard({
     <Card className="min-h-52" size="sm">
       <CardHeader>
         <CardTitle>{format.name}</CardTitle>
-        <CardDescription>{format.slug}</CardDescription>
+        <CardDescription>
+          {format.slug}
+          {format.isNew ? " · не сохранен" : ""}
+        </CardDescription>
         <CardAction>
           <div className="flex gap-2">
             <Button
               disabled={isPending || !canManage}
-              onClick={() => onEdit(format.slug)}
+              onClick={() => onEdit(format.draftKey)}
               size="sm"
               type="button"
               variant="outline"
@@ -1704,7 +1771,7 @@ function FormatSummaryCard({
             <Button
               aria-label={`Удалить формат ${format.name}`}
               disabled={isPending || !canManage}
-              onClick={() => onDelete(format.slug)}
+              onClick={() => onDelete(format.draftKey)}
               size="icon-sm"
               type="button"
               variant="outline"
@@ -2300,50 +2367,6 @@ function activeDecisionLabel(decision: ActiveDecision) {
     DECLINED_BY_US: "мы отказали",
   };
   return labels[decision];
-}
-
-function toFormatDraft(format: PauFormat): FormatDraft {
-  return {
-    ...format,
-    bitrixEventTypeIdsText: format.bitrixEventTypeIds.join(", "),
-    matchingRulesText:
-      typeof format.matchingRules === "string"
-        ? format.matchingRules
-        : JSON.stringify(format.matchingRules ?? {}, null, 2),
-  };
-}
-
-function formatDraftToPatch(format: FormatDraft) {
-  return {
-    slug: format.slug,
-    name: format.name,
-    description: format.description,
-    audience: format.audience,
-    moderatorNotes: format.moderatorNotes,
-    bitrixSyncTitleQuery: format.bitrixSyncTitleQuery.trim(),
-    bitrixEventTypeIds: format.bitrixEventTypeIdsText
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-    matchingRules: parseJsonOrString(format.matchingRulesText),
-    promptPotential: format.promptPotential,
-    promptActive: format.promptActive,
-    promptModerator: format.promptModerator,
-    promptReport: format.promptReport,
-  };
-}
-
-function parseJsonOrString(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(trimmed) as unknown;
-  } catch {
-    return trimmed;
-  }
 }
 
 function formatDate(value: string | null) {

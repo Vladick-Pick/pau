@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { requireApiRole } from "@/lib/api/auth";
 import { getPauWorkspaceSnapshot, updateFormats } from "@/lib/pau/dashboard";
+import { FORMAT_SLUG_ERROR, isSafeFormatSlug } from "@/lib/pau/format-slugs";
 
 const formatPatchSchema = z.object({
   slug: z.string().trim().min(1),
@@ -44,6 +45,10 @@ export async function PATCH(request: Request) {
 
   try {
     const patches = formatsPatchSchema.parse(await request.json());
+    if (patches.some((patch) => !isSafeFormatSlug(patch.slug))) {
+      throw new Error(FORMAT_SLUG_ERROR);
+    }
+
     const formats = await updateFormats(patches);
     return Response.json({ formats });
   } catch (error) {
