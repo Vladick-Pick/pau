@@ -513,16 +513,6 @@ export function ActiveParticipantsConsole({
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive
-                    tooltip="Участники"
-                    render={<Link href="/active-participants" />}
-                  >
-                    <UsersIcon />
-                    <span>Участники</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
                     tooltip="Форматы"
                     render={<Link href="/" />}
                   >
@@ -537,6 +527,16 @@ export function ActiveParticipantsConsole({
                   >
                     <HistoryIcon />
                     <span>История</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive
+                    tooltip="Участники"
+                    render={<Link href="/active-participants" />}
+                  >
+                    <UsersIcon />
+                    <span>Участники</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
