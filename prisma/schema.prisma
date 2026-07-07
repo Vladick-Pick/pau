@@ -97,6 +97,7 @@ model EventFormat {
   updatedAt      DateTime @updatedAt
   events         Event[]
   visits         Visit[]
+  formatVisits   FormatVisit[]
   briefs         Brief[]
 }
 
@@ -118,6 +119,7 @@ model Event {
   matchRuns     EventMatchRun[]
   briefs        Brief[]
   visits        Visit[]
+  formatVisits  FormatVisit[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 }
@@ -158,6 +160,7 @@ model EventParticipant {
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
   briefs          Brief[]
+  formatVisit     FormatVisit?
 
   @@unique([eventId, bitrixVisitId])
   @@unique([eventId, bitrixDealId])
@@ -291,6 +294,7 @@ model MemberProfile {
   participation Json
   profileUpdatedAt DateTime?
   syncedAt      DateTime  @updatedAt
+  formatVisits  FormatVisit[]
   @@unique([clubId, profileId])
   @@index([clubId])
 }
@@ -356,6 +360,26 @@ model FormatReadiness {
   updatedAt DateTime       @updatedAt
   @@unique([clubId, profileId, formatId])
   @@index([clubId])
+}
+
+model FormatVisit {
+  id                 String            @id @default(cuid())
+  clubId             String
+  profileId          String
+  member             MemberProfile     @relation(fields: [clubId, profileId], references: [clubId, profileId], onDelete: Cascade)
+  formatSlug         String
+  format             EventFormat       @relation(fields: [formatSlug], references: [slug])
+  eventId            String?
+  event              Event?            @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  eventParticipantId String?           @unique
+  eventParticipant   EventParticipant? @relation(fields: [eventParticipantId], references: [id], onDelete: SetNull)
+  attendedAt         DateTime
+  notes              String?
+  createdAt          DateTime          @default(now())
+
+  @@index([clubId, profileId, attendedAt])
+  @@index([formatSlug])
+  @@index([eventId])
 }
 
 model ParticipantNote {

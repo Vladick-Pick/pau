@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
+  CalendarPlusIcon,
   CheckCircle2Icon,
   XIcon,
   XCircleIcon,
@@ -9,6 +10,15 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +27,7 @@ import type {
   Club,
   ClubRole,
   InspectorTab,
+  ManualVisitInput,
   ParticipantDetail,
   ReadinessValue,
 } from "./types";
@@ -35,6 +46,7 @@ type Props = {
     readiness: string
   ) => Promise<void>;
   onNoteChange: (profileId: string, note: string) => Promise<void>;
+  onVisitCreate: (profileId: string, input: ManualVisitInput) => Promise<void>;
   onAssignRole: (roleId: string, profileId: string) => Promise<void>;
   onUnassignRole: (roleId: string, profileId: string) => Promise<void>;
 };
@@ -223,6 +235,123 @@ function NoteEditor({
   );
 }
 
+function ManualVisitForm({
+  detail,
+  canManage,
+  onCreate,
+}: {
+  detail: ParticipantDetail;
+  canManage: boolean;
+  onCreate: (profileId: string, input: ManualVisitInput) => Promise<void>;
+}) {
+  const firstFormatId = detail.readiness[0]?.formatId ?? "";
+  const [formatSlug, setFormatSlug] = useState(firstFormatId);
+  const [attendedAt, setAttendedAt] = useState(todayInputValue());
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFormatSlug(firstFormatId);
+    setAttendedAt(todayInputValue());
+    setNotes("");
+    setError(null);
+  }, [detail.profileId, firstFormatId]);
+
+  if (!canManage || detail.readiness.length === 0) {
+    return null;
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!formatSlug || !attendedAt || saving) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      await onCreate(detail.profileId, {
+        formatSlug,
+        attendedAt,
+        notes: notes.trim() || null,
+      });
+      setNotes("");
+    } catch {
+      setError("Не удалось добавить посещение");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      className="grid gap-3 rounded-lg border bg-muted/20 p-3"
+      onSubmit={(event) => void handleSubmit(event)}
+    >
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_132px]">
+        <label className="grid gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Формат
+          </span>
+          <Select
+            value={formatSlug}
+            onValueChange={(value) => {
+              if (value) setFormatSlug(value);
+            }}
+          >
+            <SelectTrigger className="h-8 w-full text-[13px]">
+              <SelectValue placeholder="Формат" />
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectGroup>
+                {detail.readiness.map((format) => (
+                  <SelectItem key={format.formatId} value={format.formatId}>
+                    {format.formatName}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="grid gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Дата
+          </span>
+          <Input
+            className="text-[13px]"
+            onChange={(event) => setAttendedAt(event.target.value)}
+            type="date"
+            value={attendedAt}
+          />
+        </label>
+      </div>
+      <label className="grid gap-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Заметка
+        </span>
+        <Textarea
+          className="min-h-16 text-[13px]"
+          onChange={(event) => setNotes(event.target.value)}
+          value={notes}
+        />
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button disabled={saving || !formatSlug || !attendedAt} size="sm" type="submit">
+          <CalendarPlusIcon />
+          {saving ? "Добавление..." : "Добавить"}
+        </Button>
+        {error && <span className="text-[12px] text-destructive">{error}</span>}
+      </div>
+    </form>
+  );
+}
+
+function todayInputValue() {
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
+}
+
 export function ParticipantInspector({
   detail,
   roles,
@@ -232,6 +361,7 @@ export function ParticipantInspector({
   onClose,
   onReadinessChange,
   onNoteChange,
+  onVisitCreate,
   onAssignRole,
   onUnassignRole,
 }: Props) {
@@ -566,12 +696,17 @@ export function ParticipantInspector({
                   <h3 className="mb-3 text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground">
                     История посещения форматов
                   </h3>
+                  <ManualVisitForm
+                    canManage={canManage}
+                    detail={detail}
+                    onCreate={onVisitCreate}
+                  />
                   {detail.participation.length === 0 ? (
-                    <p className="text-[12px] text-muted-foreground">
+                    <p className="mt-3 text-[12px] text-muted-foreground">
                       История посещения форматов пуста
                     </p>
                   ) : (
-                    <div className="grid gap-3">
+                    <div className="mt-4 grid gap-3">
                       {detail.participation.map((ev, i) => (
                         <div
                           key={i}

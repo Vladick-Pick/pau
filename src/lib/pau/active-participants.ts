@@ -17,6 +17,8 @@ import {
   readinessByProfile,
   getReadiness,
   getNote,
+  listFormatVisits,
+  type FormatVisitHistoryRow,
 } from "@/lib/pau/active-store";
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -113,6 +115,24 @@ function mergeReadiness(
   return merged;
 }
 
+export function mergeFormatVisitHistory({
+  visits,
+}: {
+  visits: FormatVisitHistoryRow[];
+}): ParticipationEvent[] {
+  const participation = visits.map((visit) => ({
+    date: visit.attendedAt.toISOString().slice(0, 10),
+    title: visit.formatName,
+    detail: visit.notes ?? "",
+  }));
+
+  return participation.sort((a, b) => {
+    const dateA = Date.parse(a.date);
+    const dateB = Date.parse(b.date);
+    return (Number.isNaN(dateB) ? 0 : dateB) - (Number.isNaN(dateA) ? 0 : dateA);
+  });
+}
+
 // ── Core functions ────────────────────────────────────────────────────────────
 
 export async function getActiveParticipants(
@@ -169,13 +189,15 @@ export async function getParticipantDetail(
   const m = await getMember(clubId, profileId);
   if (!m) return null;
 
-  const [rules, roleIds, readinessRows, note, formats] = await Promise.all([
-    getClubRules(clubId).then(rulesToInputs),
-    roleIdsForProfile(clubId, profileId),
-    getReadiness(clubId, profileId),
-    getNote(clubId, profileId),
-    listReadinessFormats(),
-  ]);
+  const [rules, roleIds, readinessRows, note, formats, formatVisits] =
+    await Promise.all([
+      getClubRules(clubId).then(rulesToInputs),
+      roleIdsForProfile(clubId, profileId),
+      getReadiness(clubId, profileId),
+      getNote(clubId, profileId),
+      listReadinessFormats(),
+      listFormatVisits(clubId, profileId),
+    ]);
 
   const facts = rowToFacts(m);
   const hasRole = roleIds.length > 0;
@@ -195,7 +217,7 @@ export async function getParticipantDetail(
     roleIds,
     readiness: mergeReadiness(formats, readinessRows),
     dossier: m.dossier as unknown as ProfileDossier,
-    participation: m.participation as unknown as ParticipationEvent[],
+    participation: mergeFormatVisitHistory({ visits: formatVisits }),
     note,
     rules,
   };

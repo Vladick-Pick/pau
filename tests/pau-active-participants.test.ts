@@ -32,7 +32,8 @@ const DOSSIER = {
 };
 
 const PARTICIPATION = [
-  { date: "2024-03-01", title: "Встреча", detail: "Speaker" },
+  { date: "2024-03-01", title: "Гостевая встреча", detail: "Speaker" },
+  { date: "2024-04-01", title: "Форум Ф19", detail: "Guest" },
 ];
 
 beforeAll(async () => {
@@ -75,6 +76,15 @@ beforeAll(async () => {
     dossier: DOSSIER,
     participation: PARTICIPATION,
     profileUpdatedAt: new Date("2024-06-01"),
+  });
+  await prisma.formatVisit.create({
+    data: {
+      clubId: CLUB,
+      profileId: "pA",
+      formatSlug: FORMAT_WORKING,
+      attendedAt: new Date("2024-05-01T09:00:00.000Z"),
+      notes: "Внутреннее посещение",
+    },
   });
 
   // Member B: tenureYear=1, paymentPhase="mid" → fails tenure (min=2)
@@ -188,12 +198,18 @@ describeDb("getParticipantDetail", () => {
     expect(result).toBeNull();
   });
 
-  it("returns full detail for pA including dossier, participation, note, rules", async () => {
+  it("returns full detail for pA including dossier, internal participation, note, rules", async () => {
     const detail = await getParticipantDetail(CLUB, "pA");
     expect(detail).not.toBeNull();
     expect(detail!.profileId).toBe("pA");
     expect(detail!.dossier.company).toBe("TestCo");
-    expect(detail!.participation).toEqual(PARTICIPATION);
+    expect(detail!.participation).toEqual([
+      {
+        date: "2024-05-01",
+        title: "Рабочая группа",
+        detail: "Внутреннее посещение",
+      },
+    ]);
     expect(detail!.note).toBeNull(); // no note set
     expect(Array.isArray(detail!.rules)).toBe(true);
     expect(detail!.rules.length).toBeGreaterThan(0);

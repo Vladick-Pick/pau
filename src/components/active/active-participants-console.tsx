@@ -52,6 +52,7 @@ import type {
   Club,
   ClubRole,
   ClubRule,
+  ManualVisitInput,
   ParticipantDetail,
   StatusFilter,
   SortBy,
@@ -473,6 +474,36 @@ export function ActiveParticipantsConsole({
     [state.selectedClubId, state.selectedProfileId]
   );
 
+  const handleVisitCreate = useCallback(
+    async (profileId: string, input: ManualVisitInput) => {
+      if (!state.selectedClubId) return;
+      const res = await fetch(
+        `/api/clubs/${state.selectedClubId}/participants/${profileId}/visits`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        }
+      );
+      if (!res.ok) {
+        throw new Error("visit create failed");
+      }
+
+      if (state.selectedProfileId === profileId) {
+        const detailRes = await fetch(
+          `/api/clubs/${state.selectedClubId}/participants/${profileId}`
+        );
+        if (detailRes.ok) {
+          const body = (await detailRes.json()) as { data: ParticipantDetail };
+          if (body.data) {
+            dispatch({ type: "SET_DETAIL", detail: body.data });
+          }
+        }
+      }
+    },
+    [state.selectedClubId, state.selectedProfileId]
+  );
+
   const selectedClub = useMemo(
     () => state.clubs.find((c) => c.id === state.selectedClubId) ?? null,
     [state.clubs, state.selectedClubId]
@@ -707,6 +738,7 @@ export function ActiveParticipantsConsole({
                 }
                 onReadinessChange={handleReadinessChange}
                 onNoteChange={handleNoteChange}
+                onVisitCreate={handleVisitCreate}
                 onAssignRole={handleAssignRole}
                 onUnassignRole={handleUnassignRole}
               />

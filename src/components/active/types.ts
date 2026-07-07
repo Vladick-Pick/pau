@@ -38,6 +38,12 @@ export interface ParticipantDetail extends ActiveParticipantSummary {
   rules: ActiveRuleInput[];
 }
 
+export interface ManualVisitInput {
+  formatSlug: string;
+  attendedAt: string;
+  notes: string | null;
+}
+
 // Shape returned by GET /api/clubs/[clubId]/roles
 export interface ClubRole {
   id: string;

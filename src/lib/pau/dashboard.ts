@@ -812,9 +812,10 @@ export async function runEventMatch(eventId: string) {
         ...extractMatchingProfileFields(active.profile),
         matchedScore: active.score ?? null,
         matchRationale: active.rationale ?? result.rationale,
-        sourcePayload: active.profile
-          ? ({ matchingProfile: active.profile } as Prisma.InputJsonValue)
-          : undefined,
+        sourcePayload: {
+          matchingProfileId: active.id,
+          matchingProfile: active.profile ?? null,
+        } as Prisma.InputJsonValue,
       };
 
       if (existing) {
@@ -999,6 +1000,7 @@ export async function updateEventParticipantActiveDecision(input: {
       eventId: input.eventId,
     },
     include: {
+      event: { select: { id: true, formatSlug: true, startsAt: true } },
       briefs: { orderBy: { createdAt: "desc" } },
     },
   });
@@ -1028,6 +1030,14 @@ export async function updateEventParticipantActiveDecision(input: {
       briefs: { orderBy: { createdAt: "desc" } },
     },
   });
+
+  if (input.decision === "INVITED_ATTENDED") {
+    await upsertFormatVisitForActiveDecision(participant);
+  } else {
+    await prisma.formatVisit.deleteMany({
+      where: { eventParticipantId: participant.id },
+    });
+  }
 
   return mapEventParticipant(updated);
 }
@@ -2025,6 +2035,95 @@ function activeDecisionStatus(
   }
 
   return "REFUSED";
+}
+
+type ActiveDecisionParticipant = {
+  id: string;
+  fullName: string;
+  sourcePayload: Prisma.JsonValue | null;
+  event: {
+    id: string;
+    formatSlug: string;
+    startsAt: Date | null;
+  };
+};
+
+async function upsertFormatVisitForActiveDecision(
+  participant: ActiveDecisionParticipant
+) {
+  const member = await resolveMemberProfileForEventParticipant(participant);
+  if (!member) {
+    return;
+  }
+
+  const attendedAt = participant.event.startsAt ?? new Date();
+  const notes = "Автоматически отмечено по решению активного участника";
+  const data = {
+    clubId: member.clubId,
+    profileId: member.profileId,
+    formatSlug: participant.event.formatSlug,
+    attendedAt,
+    eventId: participant.event.id,
+    notes,
+  };
+
+  await prisma.formatVisit.upsert({
+    where: { eventParticipantId: participant.id },
+    create: {
+      ...data,
+      eventParticipantId: participant.id,
+    },
+    update: data,
+  });
+}
+
+async function resolveMemberProfileForEventParticipant(
+  participant: Pick<ActiveDecisionParticipant, "fullName" | "sourcePayload">
+) {
+  const profileId = getMatchingProfileId(participant.sourcePayload);
+  if (profileId) {
+    const member = await prisma.memberProfile.findFirst({
+      where: { profileId },
+      select: { clubId: true, profileId: true },
+    });
+    if (member) {
+      return member;
+    }
+  }
+
+  const candidates = await prisma.memberProfile.findMany({
+    where: { displayName: participant.fullName },
+    take: 2,
+    select: { clubId: true, profileId: true },
+  });
+
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function getMatchingProfileId(sourcePayload: Prisma.JsonValue | null): string | null {
+  if (!isPlainRecord(sourcePayload)) {
+    return null;
+  }
+
+  const direct = stringValue(sourcePayload.matchingProfileId);
+  if (direct) {
+    return direct;
+  }
+
+  const profile = sourcePayload.matchingProfile;
+  if (!isPlainRecord(profile)) {
+    return null;
+  }
+
+  return (
+    stringValue(profile.id) ??
+    stringValue(profile.profileId) ??
+    stringValue(profile.profile_id)
+  );
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function getLocalEventMatchingResult(
