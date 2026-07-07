@@ -6,6 +6,10 @@ const prismaMocks = vi.hoisted(() => ({
   eventFindUnique: vi.fn(),
   eventParticipantFindFirst: vi.fn(),
   eventParticipantUpdate: vi.fn(),
+  formatVisitDeleteMany: vi.fn(),
+  formatVisitUpsert: vi.fn(),
+  memberProfileFindMany: vi.fn(),
+  memberProfileFindFirst: vi.fn(),
 }));
 
 const openRouterMocks = vi.hoisted(() => ({
@@ -24,6 +28,14 @@ vi.mock("@/lib/db", () => ({
     eventParticipant: {
       findFirst: prismaMocks.eventParticipantFindFirst,
       update: prismaMocks.eventParticipantUpdate,
+    },
+    formatVisit: {
+      deleteMany: prismaMocks.formatVisitDeleteMany,
+      upsert: prismaMocks.formatVisitUpsert,
+    },
+    memberProfile: {
+      findMany: prismaMocks.memberProfileFindMany,
+      findFirst: prismaMocks.memberProfileFindFirst,
     },
   },
 }));
@@ -110,6 +122,10 @@ describe("PAU dashboard attendance updates", () => {
     prismaMocks.eventFindUnique.mockReset();
     prismaMocks.eventParticipantFindFirst.mockReset();
     prismaMocks.eventParticipantUpdate.mockReset();
+    prismaMocks.formatVisitDeleteMany.mockReset();
+    prismaMocks.formatVisitUpsert.mockReset();
+    prismaMocks.memberProfileFindMany.mockReset();
+    prismaMocks.memberProfileFindFirst.mockReset();
     openRouterMocks.generateReportWithOpenRouter.mockReset();
   });
 
@@ -199,8 +215,14 @@ describe("PAU dashboard attendance updates", () => {
       eventParticipant({
         activeDecision: "DECLINED_BY_US",
         activeDecisionComment: "Не подходит по индустрии.",
+        event: eventForParticipant(),
+        sourcePayload: { matchingProfileId: "profile-1" },
       })
     );
+    prismaMocks.memberProfileFindFirst.mockResolvedValue({
+      clubId: "ws_cf1",
+      profileId: "profile-1",
+    });
     prismaMocks.eventParticipantUpdate.mockResolvedValue(
       eventParticipant({
         activeDecision: "INVITED_ATTENDED",
@@ -209,6 +231,7 @@ describe("PAU dashboard attendance updates", () => {
         status: "ATTENDED",
       })
     );
+    prismaMocks.formatVisitUpsert.mockResolvedValue({});
 
     const result = await updateEventParticipantActiveDecision({
       eventId: "event-1",
@@ -228,6 +251,26 @@ describe("PAU dashboard attendance updates", () => {
       },
       include: {
         briefs: { orderBy: { createdAt: "desc" } },
+      },
+    });
+    expect(prismaMocks.formatVisitUpsert).toHaveBeenCalledWith({
+      where: { eventParticipantId: "active-1" },
+      create: {
+        clubId: "ws_cf1",
+        profileId: "profile-1",
+        formatSlug: "guest-meeting",
+        attendedAt: new Date("2026-05-10T12:00:00.000Z"),
+        eventId: "event-1",
+        eventParticipantId: "active-1",
+        notes: "Автоматически отмечено по решению активного участника",
+      },
+      update: {
+        clubId: "ws_cf1",
+        profileId: "profile-1",
+        formatSlug: "guest-meeting",
+        attendedAt: new Date("2026-05-10T12:00:00.000Z"),
+        eventId: "event-1",
+        notes: "Автоматически отмечено по решению активного участника",
       },
     });
     expect(result.activeDecisionComment).toBeNull();
@@ -307,6 +350,16 @@ function eventParticipant(overrides: Record<string, unknown> = {}) {
     createdAt: new Date("2026-05-01T10:00:00.000Z"),
     updatedAt: new Date("2026-05-01T10:00:00.000Z"),
     briefs: [],
+    ...overrides,
+  };
+}
+
+function eventForParticipant(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "event-1",
+    title: "Гостевая встреча",
+    formatSlug: "guest-meeting",
+    startsAt: new Date("2026-05-10T12:00:00.000Z"),
     ...overrides,
   };
 }

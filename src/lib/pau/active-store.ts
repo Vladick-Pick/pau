@@ -226,6 +226,73 @@ export async function readinessByProfile(
   return map;
 }
 
+// ── Format visits ────────────────────────────────────────────────────────────
+
+export type FormatVisitHistoryRow = {
+  attendedAt: Date;
+  formatName: string;
+  notes: string | null;
+};
+
+export type ManualFormatVisitInput = {
+  formatSlug: string;
+  attendedAt: Date;
+  notes?: string | null;
+};
+
+export async function listFormatVisits(
+  clubId: string,
+  profileId: string
+): Promise<FormatVisitHistoryRow[]> {
+  const rows = await prisma.formatVisit.findMany({
+    where: { clubId, profileId },
+    include: { format: { select: { name: true } } },
+    orderBy: [{ attendedAt: "desc" }, { createdAt: "desc" }],
+  });
+
+  return rows.map((row) => ({
+    attendedAt: row.attendedAt,
+    formatName: row.format.name,
+    notes: row.notes,
+  }));
+}
+
+export async function addManualFormatVisit(
+  clubId: string,
+  profileId: string,
+  input: ManualFormatVisitInput
+): Promise<void> {
+  const [member, format] = await Promise.all([
+    prisma.memberProfile.findUnique({
+      where: { clubId_profileId: { clubId, profileId } },
+      select: { id: true },
+    }),
+    prisma.eventFormat.findUnique({
+      where: { slug: input.formatSlug },
+      select: { slug: true },
+    }),
+  ]);
+
+  if (!member || !format) {
+    throw new NotFoundError("Participant or format not found");
+  }
+
+  const notes =
+    typeof input.notes === "string" && input.notes.trim()
+      ? input.notes.trim()
+      : null;
+
+  await prisma.formatVisit.create({
+    data: {
+      clubId,
+      profileId,
+      formatSlug: input.formatSlug,
+      attendedAt: input.attendedAt,
+      notes,
+    },
+  });
+}
+
 // ── Participant notes ─────────────────────────────────────────────────────────
 
 export async function setNote(
