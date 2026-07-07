@@ -15,7 +15,6 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -25,6 +24,14 @@ import type {
   SortBy,
   StatusFilter,
 } from "./types";
+import {
+  ALL_FORMATS_FILTER,
+  filterParticipantsByFormatReadiness,
+  formatReadinessFilterLabel,
+  getParticipantFormatReadiness,
+  listReadinessFormatOptions,
+  type FormatReadinessFilterValue,
+} from "./participant-filtering";
 import { getInitials, readinessLabel } from "./utils";
 
 type Props = {
@@ -32,12 +39,16 @@ type Props = {
   roles: ClubRole[];
   selectedProfileId: string | null;
   statusFilter: StatusFilter;
+  formatFilterId: string;
+  readinessFilter: FormatReadinessFilterValue;
   sortBy: SortBy;
   query: string;
   loading: boolean;
   error: string | null;
   onSelect: (profileId: string) => void;
   onStatusFilter: (filter: StatusFilter) => void;
+  onFormatFilter: (formatId: string) => void;
+  onReadinessFilter: (filter: FormatReadinessFilterValue) => void;
   onSortChange: (sort: SortBy) => void;
   onQueryChange: (q: string) => void;
 };
@@ -150,17 +161,37 @@ const STATUS_SEGMENTS: Array<{ value: StatusFilter; label: string }> = [
   { value: "gaps", label: "Нужны факты" },
 ];
 
+const SORT_OPTIONS: Array<{ value: SortBy; label: string }> = [
+  { value: "status", label: "Сначала активные" },
+  { value: "name", label: "По имени" },
+  { value: "retention", label: "По retention" },
+];
+
+const READINESS_SEGMENTS: Array<{
+  value: FormatReadinessFilterValue;
+  label: string;
+}> = [
+  { value: "all", label: "Все" },
+  { value: "READY", label: "Готовы" },
+  { value: "NOT_READY", label: "Не готовы" },
+  { value: "UNMARKED", label: "Не размечены" },
+];
+
 export function ActiveParticipantList({
   participants,
   roles,
   selectedProfileId,
   statusFilter,
+  formatFilterId,
+  readinessFilter,
   sortBy,
   query,
   loading,
   error,
   onSelect,
   onStatusFilter,
+  onFormatFilter,
+  onReadinessFilter,
   onSortChange,
   onQueryChange,
 }: Props) {
@@ -169,9 +200,33 @@ export function ActiveParticipantList({
     [roles]
   );
 
+  const formatOptions = useMemo(
+    () => listReadinessFormatOptions(participants),
+    [participants]
+  );
+
+  const selectedFormatName = useMemo(
+    () =>
+      formatOptions.find((format) => format.formatId === formatFilterId)
+        ?.formatName,
+    [formatOptions, formatFilterId]
+  );
+  const formatFilterLabel = formatReadinessFilterLabel(
+    formatOptions,
+    formatFilterId
+  );
+  const sortLabel =
+    SORT_OPTIONS.find((option) => option.value === sortBy)?.label ??
+    "Сначала активные";
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = participants.filter((p) => {
+    const readinessFiltered = filterParticipantsByFormatReadiness(participants, {
+      formatId: formatFilterId,
+      readiness: readinessFilter,
+    });
+
+    const list = readinessFiltered.filter((p) => {
       const hasGaps = p.evaluation.missingKeys.length > 0;
       const statusOk =
         statusFilter === "all" ||
@@ -206,7 +261,15 @@ export function ActiveParticipantList({
     });
 
     return list;
-  }, [participants, statusFilter, sortBy, query, roleMap]);
+  }, [
+    participants,
+    formatFilterId,
+    readinessFilter,
+    statusFilter,
+    sortBy,
+    query,
+    roleMap,
+  ]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -233,6 +296,50 @@ export function ActiveParticipantList({
               </button>
             ))}
           </div>
+          <Select
+            value={formatFilterId}
+            onValueChange={(value) => {
+              if (value) onFormatFilter(value);
+            }}
+          >
+            <SelectTrigger aria-label="Формат" className="h-9 w-[190px] text-sm">
+              <span className="truncate text-left">{formatFilterLabel}</span>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectGroup>
+                <SelectItem value={ALL_FORMATS_FILTER}>Все форматы</SelectItem>
+                {formatOptions.map((format) => (
+                  <SelectItem key={format.formatId} value={format.formatId}>
+                    {format.formatName}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <div
+            aria-label="Фильтр по готовности формата"
+            className="inline-flex gap-0.5 rounded-lg border bg-muted/60 p-[3px]"
+          >
+            {READINESS_SEGMENTS.map((seg) => {
+              const disabled = formatFilterId === ALL_FORMATS_FILTER;
+              return (
+                <button
+                  key={seg.value}
+                  aria-pressed={readinessFilter === seg.value}
+                  className={cn(
+                    "rounded-md px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45",
+                    readinessFilter === seg.value &&
+                      "bg-card text-foreground shadow-sm"
+                  )}
+                  disabled={disabled}
+                  type="button"
+                  onClick={() => onReadinessFilter(seg.value)}
+                >
+                  {seg.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex min-w-44 items-center">
@@ -248,13 +355,15 @@ export function ActiveParticipantList({
           </div>
           <Select value={sortBy} onValueChange={(v) => onSortChange(v as SortBy)}>
             <SelectTrigger className="h-9 w-auto text-sm">
-              <SelectValue />
+              <span className="truncate text-left">{sortLabel}</span>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                <SelectItem value="status">Сначала активные</SelectItem>
-                <SelectItem value="name">По имени</SelectItem>
-                <SelectItem value="retention">По retention</SelectItem>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectGroup>
             </SelectContent>
           </Select>
@@ -318,6 +427,16 @@ export function ActiveParticipantList({
                 .map((id) => roleMap.get(id))
                 .filter((r): r is ClubRole => r !== undefined);
               const color = avatarColor(p.profileId);
+              const readinessRows =
+                formatFilterId === ALL_FORMATS_FILTER
+                  ? p.readiness
+                  : [
+                      getParticipantFormatReadiness(
+                        p,
+                        formatFilterId,
+                        selectedFormatName
+                      ),
+                    ];
 
               return (
                 <button
@@ -384,12 +503,12 @@ export function ActiveParticipantList({
 
                   {/* Column 3: Format readiness pips */}
                   <div className="grid gap-1 content-start">
-                    {p.readiness.length === 0 ? (
+                    {readinessRows.length === 0 ? (
                       <span className="text-[11.5px] text-muted-foreground">
                         Не размечены
                       </span>
                     ) : (
-                      p.readiness.map((r) => (
+                      readinessRows.map((r) => (
                         <ReadinessPip
                           key={r.formatId}
                           readiness={r.readiness}

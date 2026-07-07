@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { sortClubsForDefaultSelection } from "@/lib/pau/club-ordering";
 import { DEFAULT_ACTIVE_RULES } from "@/lib/pau/active-defaults";
 import type { ProfileFacts, ProfileDossier, ParticipationEvent } from "@/lib/profile/types";
 import type { ActiveRule, ActiveRole, Club, FormatReadiness, MemberProfile } from "@prisma/client";
@@ -15,7 +16,8 @@ export class NotFoundError extends Error {
 // ── Clubs ─────────────────────────────────────────────────────────────────────
 
 export async function listClubs(): Promise<Club[]> {
-  return prisma.club.findMany({ orderBy: { name: "asc" } });
+  const clubs = await prisma.club.findMany({ orderBy: { name: "asc" } });
+  return sortClubsForDefaultSelection(clubs);
 }
 
 // ── Club seeding ──────────────────────────────────────────────────────────────
