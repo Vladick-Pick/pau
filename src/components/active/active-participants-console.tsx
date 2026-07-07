@@ -47,6 +47,10 @@ import { RulesPanel } from "./rules-panel";
 import { RolesPanel } from "./roles-panel";
 import { ActiveParticipantList } from "./active-participant-list";
 import { ParticipantInspector } from "./participant-inspector";
+import {
+  ALL_FORMATS_FILTER,
+  type FormatReadinessFilterValue,
+} from "./participant-filtering";
 import type {
   ActiveParticipantSummary,
   Club,
@@ -78,6 +82,8 @@ type Action =
   | { type: "SET_DETAIL"; detail: ParticipantDetail | null }
   | { type: "SET_CLUB_ID"; clubId: string }
   | { type: "SET_STATUS_FILTER"; filter: StatusFilter }
+  | { type: "SET_FORMAT_FILTER"; formatId: string }
+  | { type: "SET_READINESS_FILTER"; filter: FormatReadinessFilterValue }
   | { type: "SET_SORT"; sort: SortBy }
   | { type: "SET_QUERY"; query: string }
   | { type: "SET_SELECTED"; profileId: string | null }
@@ -93,6 +99,8 @@ type State = {
   detail: ParticipantDetail | null;
   selectedClubId: string | null;
   statusFilter: StatusFilter;
+  formatFilterId: string;
+  readinessFilter: FormatReadinessFilterValue;
   sortBy: SortBy;
   query: string;
   selectedProfileId: string | null;
@@ -121,9 +129,20 @@ function reducer(state: State, action: Action): State {
         participants: [],
         roles: [],
         rules: [],
+        formatFilterId: ALL_FORMATS_FILTER,
+        readinessFilter: "all",
       };
     case "SET_STATUS_FILTER":
       return { ...state, statusFilter: action.filter };
+    case "SET_FORMAT_FILTER":
+      return {
+        ...state,
+        formatFilterId: action.formatId,
+        readinessFilter:
+          action.formatId === ALL_FORMATS_FILTER ? "all" : state.readinessFilter,
+      };
+    case "SET_READINESS_FILTER":
+      return { ...state, readinessFilter: action.filter };
     case "SET_SORT":
       return { ...state, sortBy: action.sort };
     case "SET_QUERY":
@@ -194,6 +213,8 @@ const initialState: State = {
   detail: null,
   selectedClubId: null,
   statusFilter: "all",
+  formatFilterId: ALL_FORMATS_FILTER,
+  readinessFilter: "all",
   sortBy: "status",
   query: "",
   selectedProfileId: null,
@@ -704,6 +725,8 @@ export function ActiveParticipantsConsole({
               roles={state.roles}
               selectedProfileId={state.selectedProfileId}
               statusFilter={state.statusFilter}
+              formatFilterId={state.formatFilterId}
+              readinessFilter={state.readinessFilter}
               sortBy={state.sortBy}
               query={state.query}
               loading={state.participantsLoad.status === "loading"}
@@ -717,6 +740,12 @@ export function ActiveParticipantsConsole({
               }
               onStatusFilter={(filter) =>
                 dispatch({ type: "SET_STATUS_FILTER", filter })
+              }
+              onFormatFilter={(formatId) =>
+                dispatch({ type: "SET_FORMAT_FILTER", formatId })
+              }
+              onReadinessFilter={(filter) =>
+                dispatch({ type: "SET_READINESS_FILTER", filter })
               }
               onSortChange={(sort) =>
                 dispatch({ type: "SET_SORT", sort })
