@@ -49,7 +49,7 @@ describe("matching client", () => {
     });
   });
 
-  it("throws a readable error on failed matching API calls", async () => {
+  it("throws a readable error on failed remote matching calls", async () => {
     await expect(
       requestParticipantMatch(
         {
@@ -68,6 +68,8 @@ describe("matching client", () => {
           history: [],
         }
       )
-    ).rejects.toThrow("Matching API failed with 429 Too Many Requests");
+    ).rejects.toThrow(
+      "Remote matching service failed with 429 Too Many Requests"
+    );
   });
 });

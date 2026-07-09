@@ -1,5 +1,3 @@
-import type { EventMatchProfile } from "@/lib/matching/client";
-
 export type PreparationParticipantKind = "POTENTIAL" | "ACTIVE";
 export type PreparationBriefType = "POTENTIAL" | "ACTIVE" | "MODERATOR";
 
@@ -34,6 +32,29 @@ export type MatchableParticipant = {
   businessExtra3?: string | null;
   businessProfile?: unknown;
   enrichment?: unknown;
+};
+
+export type EventMatchProfile = {
+  event: MatchableEvent & {
+    formatName?: string;
+  };
+  format: {
+    slug: string;
+    name: string;
+    matchingInstructions?: string | null;
+  };
+  participants: Array<{
+    id: string;
+    fullName: string;
+    company?: string | null;
+    position?: string | null;
+    city?: string | null;
+    age?: number | null;
+    gender?: string | null;
+    status?: string;
+    participantKind?: string;
+    businessContext?: string[];
+  }>;
 };
 
 export type AttendanceSummaryParticipant = {

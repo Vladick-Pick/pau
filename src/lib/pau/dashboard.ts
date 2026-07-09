@@ -53,8 +53,7 @@ import {
   getRequiredEnv,
   isDatabaseConfigured,
 } from "@/lib/env";
-import { requestEventMatch } from "@/lib/matching/client";
-import { buildLocalEventMatchResult } from "@/lib/matching/local-event-matching";
+import { summarizeLatestMatch } from "@/lib/matching/match-run-audit";
 import {
   BITRIX_AUTO_SYNC_INTERVAL_MS,
   BITRIX_AUTO_SYNC_LOCK_KEY,
@@ -70,10 +69,10 @@ import { shouldUseDemoWorkspaceFallback } from "@/lib/pau/demo-fallback";
 import { resolvePauFormatForBitrixEvent } from "@/lib/pau/events";
 import {
   buildEventBriefPlan,
-  buildEventMatchProfile,
   buildTranscriptReportInput,
   selectDefaultExportBriefs,
 } from "@/lib/pau/preparation";
+import { runEventMatching } from "@/lib/pau/event-matching-run";
 import type {
   PauBrief,
   PauEvent,
@@ -85,6 +84,13 @@ import type {
 } from "@/lib/pau/types";
 
 export { hashPassword, verifyPassword } from "../auth/passwords";
+
+export async function runEventMatch(
+  eventId: string,
+  actor?: { role?: string | null; userName?: string | null }
+) {
+  return runEventMatching({ eventId, actor });
+}
 
 const DEFAULT_FORMAT_SLUG = "guest-meeting";
 const DEFAULT_ADMIN_LOGIN = "vladislavbogdan";
@@ -734,119 +740,6 @@ export function startBitrixAutoSyncScheduler(initialLastStartedAt: Date | null =
   void runBitrixAutoSyncIfDue();
 }
 
-export async function runEventMatch(eventId: string) {
-  assertDatabase();
-  const endpoint = getOptionalEnv("MATCHING_API_ENDPOINT");
-  const apiKey = getOptionalEnv("MATCHING_API_KEY");
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    include: eventInclude,
-  });
-  if (!event) {
-    throw new Error("Event not found");
-  }
-
-  const profile = buildEventMatchProfile({
-    event: {
-      id: event.id,
-      title: event.title,
-      startsAt: event.startsAt?.toISOString() ?? null,
-      formatSlug: event.formatSlug,
-    },
-    format: {
-      slug: event.format.slug,
-      name: event.format.name,
-      matchingRules: event.format.matchingRules,
-    },
-    participants: event.participants.map((participant) => ({
-      id: participant.id,
-      kind: participant.kind,
-      status: participant.status,
-      fullName: participant.fullName,
-      company: participant.company,
-      position: participant.position,
-      city: participant.city,
-      age: participant.age,
-      gender: participant.gender,
-      businessMain: participant.businessMain,
-      businessExtra1: participant.businessExtra1,
-      businessExtra2: participant.businessExtra2,
-      businessExtra3: participant.businessExtra3,
-      businessProfile: participant.businessProfile,
-      enrichment: participant.enrichment,
-    })),
-  });
-
-  try {
-    const result = shouldUseLocalEventMatching()
-      ? getLocalEventMatchingResult(profile)
-      : endpoint && apiKey
-        ? await requestEventMatch({ endpoint, apiKey }, profile)
-        : getLocalEventMatchingResult(profile);
-    await prisma.eventMatchRun.create({
-      data: {
-        eventId,
-        activeParticipantIds: result.activeParticipants.map(
-          (participant) => participant.id
-        ),
-        activeParticipantCount: result.activeParticipants.length,
-        requestPayload: profile as Prisma.InputJsonValue,
-        responsePayload: result as Prisma.InputJsonValue,
-      },
-    });
-
-    for (const active of result.activeParticipants) {
-      const existing = await prisma.eventParticipant.findFirst({
-        where: {
-          eventId,
-          kind: "ACTIVE",
-          fullName: active.fullName,
-        },
-      });
-      const data = {
-        kind: "ACTIVE" as const,
-        status: existing?.activeDecision
-          ? activeDecisionStatus(existing.activeDecision)
-          : ("UNKNOWN" as const),
-        fullName: active.fullName,
-        ...extractMatchingProfileFields(active.profile),
-        matchedScore: active.score ?? null,
-        matchRationale: active.rationale ?? result.rationale,
-        sourcePayload: {
-          matchingProfileId: active.id,
-          matchingProfile: active.profile ?? null,
-        } as Prisma.InputJsonValue,
-      };
-
-      if (existing) {
-        await prisma.eventParticipant.update({
-          where: { id: existing.id },
-          data,
-        });
-      } else {
-        await prisma.eventParticipant.create({
-          data: {
-            eventId,
-            ...data,
-          },
-        });
-      }
-    }
-
-    return result;
-  } catch (error) {
-    await prisma.eventMatchRun.create({
-      data: {
-        eventId,
-        activeParticipantCount: 0,
-        requestPayload: profile as Prisma.InputJsonValue,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-    });
-    throw error;
-  }
-}
-
 export async function generateEventBriefs(input: {
   eventId: string;
   createdByRole: Role;
@@ -1418,10 +1311,7 @@ export function getIntegrationStatus(): PauIntegrationStatus {
           getOptionalEnv("BITRIX24_WEBHOOK_USER_ID") &&
           getOptionalEnv("BITRIX24_WEBHOOK_TOKEN"))
     ),
-    matching: Boolean(
-      shouldUseLocalEventMatching() ||
-        (getOptionalEnv("MATCHING_API_ENDPOINT") && getOptionalEnv("MATCHING_API_KEY"))
-    ),
+    matching: isDatabaseConfigured(),
     openrouter: Boolean(getOptionalEnv("OPENROUTER_API_KEY")),
   };
 }
@@ -1680,13 +1570,7 @@ function mapEvent(event: EventWithRelations): PauEvent {
     formatName: event.format.name,
     syncedAt: event.syncedAt?.toISOString() ?? null,
     counts,
-    latestMatch: match
-      ? {
-          activeParticipantCount: match.activeParticipantCount,
-          rationale: getRationale(match.responsePayload),
-          createdAt: match.createdAt.toISOString(),
-      }
-      : null,
+    latestMatch: match ? summarizeLatestMatch(match) : null,
     latestReport: latestReport
       ? {
           id: latestReport.id,
@@ -1694,7 +1578,9 @@ function mapEvent(event: EventWithRelations): PauEvent {
           createdAt: latestReport.createdAt.toISOString(),
         }
       : null,
-    participants: event.participants.map(mapEventParticipant),
+    participants: event.participants
+      .map(mapEventParticipant)
+      .toSorted(compareEventParticipants),
   };
 }
 
@@ -1733,13 +1619,66 @@ function mapEventParticipant(
     businessProfile,
     enrichment: normalizeParticipantEnrichment(participant),
     bitrixComment: getParticipantBitrixComment(participant.sourcePayload),
+    matchOrder: getParticipantMatchOrder(participant.sourcePayload),
     matchedScore: participant.matchedScore,
     matchRationale: participant.matchRationale,
+    matchedPotentialId: getParticipantMatchingProfileString(
+      participant.sourcePayload,
+      "matchedPotentialId"
+    ),
+    matchedPotentialName: getParticipantMatchingProfileString(
+      participant.sourcePayload,
+      "matchedPotentialName"
+    ),
+    matchConfidence: getParticipantMatchingProfileNumber(
+      participant.sourcePayload,
+      "confidence"
+    ),
+    matchEvidenceFields: getParticipantMatchingProfileStringList(
+      participant.sourcePayload,
+      "evidenceFields"
+    ),
+    matchRisks: getParticipantMatchingProfileStringList(
+      participant.sourcePayload,
+      "risks"
+    ),
+    matchIntroTopic: getParticipantMatchingProfileString(
+      participant.sourcePayload,
+      "introTopic"
+    ),
+    matchSemanticReason: getParticipantMatchingProfileString(
+      participant.sourcePayload,
+      "semanticReason"
+    ),
+    relatedPotentialMatches: getParticipantRelatedPotentialMatches(
+      participant.sourcePayload
+    ),
     attendanceMarked: participant.attendanceMarked,
     activeDecision: participant.activeDecision,
     activeDecisionComment: participant.activeDecisionComment,
     briefSummary: getBriefSummary(activeBrief?.content),
   };
+}
+
+function compareEventParticipants(
+  left: PauEventParticipant,
+  right: PauEventParticipant
+) {
+  if (left.kind !== right.kind) {
+    return left.kind === "ACTIVE" ? -1 : 1;
+  }
+
+  if (left.kind === "ACTIVE" && right.kind === "ACTIVE") {
+    const leftOrder = left.matchOrder ?? Number.POSITIVE_INFINITY;
+    const rightOrder = right.matchOrder ?? Number.POSITIVE_INFINITY;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+  }
+
+  return left.fullName.localeCompare(right.fullName, ["ru", "en"], {
+    sensitivity: "base",
+  });
 }
 
 function normalizeParticipantBusinessProfile(
@@ -2122,67 +2061,146 @@ function getMatchingProfileId(sourcePayload: Prisma.JsonValue | null): string | 
   );
 }
 
+function getParticipantMatchOrder(
+  sourcePayload: Prisma.JsonValue | null
+): number | null {
+  if (!isPlainRecord(sourcePayload)) {
+    return null;
+  }
+
+  const direct = positiveIntegerValue(sourcePayload.matchOrder);
+  if (direct) {
+    return direct;
+  }
+
+  const profile = sourcePayload.matchingProfile;
+  if (!isPlainRecord(profile)) {
+    return null;
+  }
+
+  return (
+    positiveIntegerValue(profile.matchOrder)
+  );
+}
+
+function getParticipantMatchingProfileString(
+  sourcePayload: Prisma.JsonValue | null,
+  key: string
+): string | null {
+  const profile = getParticipantMatchingProfile(sourcePayload);
+  return profile ? stringValue(profile[key]) : null;
+}
+
+function getParticipantMatchingProfileNumber(
+  sourcePayload: Prisma.JsonValue | null,
+  key: string
+): number | null {
+  const profile = getParticipantMatchingProfile(sourcePayload);
+  if (!profile) {
+    return null;
+  }
+
+  const value = profile[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getParticipantMatchingProfileStringList(
+  sourcePayload: Prisma.JsonValue | null,
+  key: string
+): string[] {
+  const profile = getParticipantMatchingProfile(sourcePayload);
+  const value = profile?.[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    const text = stringValue(item);
+    return text ? [text] : [];
+  });
+}
+
+function getParticipantRelatedPotentialMatches(
+  sourcePayload: Prisma.JsonValue | null
+): PauEventParticipant["relatedPotentialMatches"] {
+  const profile = getParticipantMatchingProfile(sourcePayload);
+  const value = profile?.relatedPotentialMatches;
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (!isPlainRecord(item)) {
+      return [];
+    }
+
+    const potentialId = stringValue(item.potentialId);
+    const potentialName = stringValue(item.potentialName);
+    const finalScore = finiteNumberValue(item.finalScore);
+    const confidence = finiteNumberValue(item.confidence);
+    if (!potentialId || !potentialName || finalScore === null || confidence === null) {
+      return [];
+    }
+
+    return [
+      {
+        potentialId,
+        potentialName,
+        finalScore,
+        semanticScore: finiteNumberValue(item.semanticScore),
+        semanticReason: stringValue(item.semanticReason),
+        confidence,
+        evidenceFields: stringListValue(item.evidenceFields),
+        risks: stringListValue(item.risks),
+        rationale: stringValue(item.rationale) ?? "",
+        introTopic: stringValue(item.introTopic) ?? "",
+      },
+    ];
+  });
+}
+
+function getParticipantMatchingProfile(
+  sourcePayload: Prisma.JsonValue | null
+): Record<string, unknown> | null {
+  if (!isPlainRecord(sourcePayload) || !isPlainRecord(sourcePayload.matchingProfile)) {
+    return null;
+  }
+
+  return sourcePayload.matchingProfile;
+}
+
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function getLocalEventMatchingResult(
-  profile: Parameters<typeof buildLocalEventMatchResult>[0]
-) {
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("Matching API credentials are required in production");
-  }
-
-  return buildLocalEventMatchResult(profile);
+function finiteNumberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function shouldUseLocalEventMatching() {
-  if (process.env.NODE_ENV === "production") {
-    return false;
+function stringListValue(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  if (getOptionalEnv("PAU_LOCAL_MATCHING") === "1") {
-    return true;
-  }
-
-  return !(
-    getOptionalEnv("MATCHING_API_ENDPOINT") && getOptionalEnv("MATCHING_API_KEY")
-  );
+  return value.flatMap((item) => {
+    const text = stringValue(item);
+    return text ? [text] : [];
+  });
 }
 
-function extractMatchingProfileFields(profile: unknown) {
-  if (!isPlainRecord(profile)) {
-    return {};
+function positiveIntegerValue(value: unknown): number | null {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(numeric)) {
+    return null;
   }
 
-  return {
-    ...stringField("company", profile.company),
-    ...stringField("position", profile.position),
-    ...stringField("city", profile.city),
-    ...stringField("gender", profile.gender),
-    ...stringField("businessMain", profile.businessMain),
-    ...stringField("businessExtra1", profile.businessExtra1),
-    ...stringField("businessExtra2", profile.businessExtra2),
-    ...stringField("businessExtra3", profile.businessExtra3),
-    ...numberField("age", profile.age),
-  };
-}
-
-function stringField(field: string, value: unknown) {
-  if (typeof value !== "string") {
-    return {};
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? { [field]: trimmed } : {};
-}
-
-function numberField(field: string, value: unknown) {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return {};
-  }
-
-  return { [field]: value };
+  const integer = Math.trunc(numeric);
+  return integer > 0 ? integer : null;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -2396,20 +2414,6 @@ function getBriefSummary(content: Prisma.JsonValue | undefined | null) {
     typeof content.summary === "string"
   ) {
     return content.summary;
-  }
-
-  return null;
-}
-
-function getRationale(content: Prisma.JsonValue | undefined | null) {
-  if (
-    content &&
-    typeof content === "object" &&
-    !Array.isArray(content) &&
-    "rationale" in content &&
-    typeof content.rationale === "string"
-  ) {
-    return content.rationale;
   }
 
   return null;

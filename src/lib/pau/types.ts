@@ -99,12 +99,34 @@ export type PauEventParticipant = {
   businessProfile: PauBusinessProfile | null;
   enrichment: PauEnrichmentProfile | null;
   bitrixComment?: string | null;
+  matchOrder: number | null;
   matchedScore: number | null;
   matchRationale: string | null;
+  matchedPotentialId?: string | null;
+  matchedPotentialName?: string | null;
+  matchConfidence?: number | null;
+  matchEvidenceFields?: string[];
+  matchRisks?: string[];
+  matchIntroTopic?: string | null;
+  matchSemanticReason?: string | null;
+  relatedPotentialMatches?: PauRelatedPotentialMatch[];
   attendanceMarked: boolean;
   activeDecision: ActiveParticipantDecision | null;
   activeDecisionComment: string | null;
   briefSummary: string | null;
+};
+
+export type PauRelatedPotentialMatch = {
+  potentialId: string;
+  potentialName: string;
+  finalScore: number;
+  semanticScore?: number | null;
+  semanticReason?: string | null;
+  confidence: number;
+  evidenceFields: string[];
+  risks: string[];
+  rationale: string;
+  introTopic: string;
 };
 
 export type PauEvent = {
@@ -134,6 +156,32 @@ export type PauEvent = {
     activeParticipantCount: number;
     rationale: string | null;
     createdAt: string;
+    status: "SUCCESS" | "FAILED" | "DEGRADED";
+    semanticStatus:
+      | "applied"
+      | "failed"
+      | "skipped_no_key"
+      | "skipped_empty"
+      | "shadow"
+      | "capped"
+      | null;
+    semanticModel: string | null;
+    degradedReason: string | null;
+    sourceFreshness: {
+      enabled: boolean;
+      staleAfterDays: number;
+      staleCount: number;
+      newestProfileUpdatedAt: string | null;
+      oldestProfileUpdatedAt: string | null;
+      newestSyncedAt: string | null;
+      oldestSyncedAt: string | null;
+    } | null;
+    counts: {
+      selected: number;
+      excluded: number;
+      coveredPotentials: number;
+      uncoveredPotentials: number;
+    };
   } | null;
   latestReport: {
     id: string;

@@ -66,14 +66,6 @@ vi.mock("@/lib/env", () => ({
   isDatabaseConfigured: vi.fn(() => true),
 }));
 
-vi.mock("@/lib/matching/client", () => ({
-  requestEventMatch: vi.fn(),
-}));
-
-vi.mock("@/lib/matching/local-event-matching", () => ({
-  buildLocalEventMatchResult: vi.fn(),
-}));
-
 vi.mock("@/lib/pau/auto-sync", () => ({
   BITRIX_AUTO_SYNC_INTERVAL_MS: 60 * 60 * 1000,
   BITRIX_AUTO_SYNC_LOCK_KEY: "BITRIX24_EVENTS",

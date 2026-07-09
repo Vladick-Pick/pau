@@ -60,7 +60,7 @@ describe("OpenRouter brief generation", () => {
     expect(calls[0].init.headers).toMatchObject({
       Authorization: "Bearer openrouter-secret",
       "Content-Type": "application/json",
-      "X-OpenRouter-Title": "ПАУ",
+      "X-OpenRouter-Title": "%D0%9F%D0%90%D0%A3",
     });
     expect(JSON.parse(String(calls[0].init.body))).toMatchObject({
       model: "openai/gpt-5-mini",

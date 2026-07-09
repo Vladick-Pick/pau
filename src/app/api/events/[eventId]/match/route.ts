@@ -1,5 +1,5 @@
 import { requireApiRole } from "@/lib/api/auth";
-import { runEventMatch } from "@/lib/pau/dashboard";
+import { runEventMatching } from "@/lib/pau/event-matching-run";
 
 export async function POST(
   _request: Request,
@@ -12,7 +12,13 @@ export async function POST(
 
   try {
     const { eventId } = await context.params;
-    const match = await runEventMatch(eventId);
+    const match = await runEventMatching({
+      eventId,
+      actor: {
+        role: auth.session?.role ?? null,
+        userName: auth.session?.userName ?? null,
+      },
+    });
     return Response.json({ match });
   } catch (error) {
     return Response.json(

@@ -95,12 +95,18 @@ import { summarizeFormatCard } from "@/lib/pau/format-cards";
 import {
   createFormatDraft,
   formatDraftToPatch,
+  matchingSettingsFromRulesText,
   removeFormatDraft,
   toFormatDraft,
   updateFormatDraft as updateFormatDraftByKey,
+  updateMatchingSettingsDraft,
   validateFormatDrafts,
   type FormatDraft,
+  type MatchingRecentVisitMode,
 } from "@/lib/pau/format-drafts";
+import {
+  activeInviteTotalFromDraft,
+} from "@/lib/matching/matching-settings";
 import {
   MAX_REPORT_TRANSCRIPT_CHARS,
   computeEventAttendanceSummary,
@@ -247,12 +253,12 @@ export function PauConsole({
       });
       const body = await response.json();
       if (!response.ok) {
-        throw new Error(body.error ?? "Matching failed");
+        throw new Error(body.error ?? "Подбор не выполнен");
       }
 
       return {
         tone: "default",
-        title: "Matching обновлен",
+        title: "Подбор обновлен",
         message: `Активных участников: ${body.match?.activeParticipants?.length ?? 0}.`,
       };
     });
@@ -967,9 +973,9 @@ function EventReportPanel({
     <div className="grid gap-3 rounded-md border bg-card p-4 text-card-foreground lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="flex min-w-0 flex-col gap-3">
         <div>
-          <h3 className="text-sm font-medium">Отчет по transcript</h3>
+          <h3 className="text-sm font-medium">Отчет по записи встречи</h3>
           <p className="text-xs text-muted-foreground">
-            Prompt берется из настроек формата.
+            Промпт берется из настроек формата.
           </p>
         </div>
         <Textarea
@@ -1103,7 +1109,9 @@ function EventHeader({
             <Badge variant="secondary">{event.formatName}</Badge>
             <StatusBadge status={event.status} />
             {event.latestMatch ? (
-              <Badge variant="outline">matching {event.latestMatch.activeParticipantCount}</Badge>
+              <Badge variant="outline">
+                подбор {event.latestMatch.activeParticipantCount}
+              </Badge>
             ) : null}
           </div>
           <h2 className="mt-2 text-xl font-semibold tracking-tight">{event.title}</h2>
@@ -1121,7 +1129,7 @@ function EventHeader({
             variant="outline"
           >
             <SparklesIcon data-icon="inline-start" />
-            Matching
+            Подбор
           </Button>
           <Button
             disabled={
@@ -1153,6 +1161,58 @@ function EventHeader({
         <Count label="Не пришли" value={event.counts.missed} />
         <Count label="Брифы" value={event.counts.briefs} />
       </div>
+      {event.latestMatch ? <LatestMatchPanel latestMatch={event.latestMatch} /> : null}
+    </div>
+  );
+}
+
+function LatestMatchPanel({
+  latestMatch,
+}: {
+  latestMatch: NonNullable<PauEvent["latestMatch"]>;
+}) {
+  const isWarning = latestMatch.status !== "SUCCESS";
+  const freshnessWarning =
+    latestMatch.sourceFreshness?.enabled && latestMatch.sourceFreshness.staleCount > 0;
+
+  return (
+    <div className="grid gap-2 rounded-md border border-dashed bg-muted/20 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={latestMatch.status === "SUCCESS" ? "secondary" : "outline"}>
+          {latestMatchStatusLabel(latestMatch.status)}
+        </Badge>
+        <span className="text-xs text-muted-foreground">
+          {formatDate(latestMatch.createdAt)}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          покрытие {latestMatch.counts.coveredPotentials}/
+          {latestMatch.counts.coveredPotentials + latestMatch.counts.uncoveredPotentials}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          исключено {latestMatch.counts.excluded}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          семантика {latestMatchSemanticLabel(latestMatch.semanticStatus)}
+        </span>
+        {freshnessWarning ? (
+          <span className="text-xs text-amber-700">
+            устаревшие профили: {latestMatch.sourceFreshness?.staleCount}
+          </span>
+        ) : null}
+      </div>
+      {latestMatch.rationale ? (
+        <p className="text-sm text-muted-foreground">{latestMatch.rationale}</p>
+      ) : null}
+      {isWarning ? (
+        <Alert>
+          <AlertTitle>Подбор с предупреждениями</AlertTitle>
+          <AlertDescription>
+            {latestMatch.degradedReason
+              ? latestMatchDegradedReasonLabel(latestMatch.degradedReason)
+              : "Нужна ручная проверка источников и состава подбора."}
+          </AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }
@@ -1204,17 +1264,20 @@ function ParticipantsTable({
               onClick={() => onParticipantSelect(participant.id)}
             >
               <TableCell>
-                <div className="flex min-w-48 flex-col gap-1">
-                  <span className="font-medium">{participant.fullName}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {[participant.company, participant.position].filter(Boolean).join(" · ") || "Без компании"}
-                  </span>
+                <div className="flex min-w-48 items-start gap-2">
+                  {participant.kind === "ACTIVE" && participant.matchOrder ? (
+                    <MatchOrderBadge order={participant.matchOrder} />
+                  ) : null}
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="font-medium">{participant.fullName}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {[participant.company, participant.position].filter(Boolean).join(" · ") || "Без компании"}
+                    </span>
+                  </div>
                 </div>
               </TableCell>
               <TableCell>
-                <div className="max-w-72 truncate text-sm">
-                  {participant.businessMain ?? "Не заполнено"}
-                </div>
+                <BusinessSummary participant={participant} />
               </TableCell>
               <TableCell>
                 <div className="flex flex-wrap gap-1">
@@ -1382,9 +1445,35 @@ function ParticipantDetails({
   const matchingFacts = [
     { label: "Решение", value: participant.activeDecision ? activeDecisionLabel(participant.activeDecision) : null },
     { label: "Комментарий", value: participant.activeDecisionComment },
-    { label: "Score", value: participant.matchedScore?.toFixed(2) },
-    { label: "Rationale", value: participant.matchRationale },
+    { label: "Гость", value: participant.matchedPotentialName },
+    {
+      label: "Уверенность",
+      value:
+        typeof participant.matchConfidence === "number"
+          ? formatPercent(participant.matchConfidence)
+          : null,
+    },
+    {
+      label: "Доказательства",
+      value: participant.matchEvidenceFields?.length
+        ? participant.matchEvidenceFields.join(", ")
+        : null,
+    },
+    {
+      label: "Риски",
+      value: participant.matchRisks?.length ? participant.matchRisks.join(", ") : null,
+    },
+    { label: "Тема интро", value: participant.matchIntroTopic },
+    { label: "Оценка", value: participant.matchedScore?.toFixed(2) },
+    { label: "Обоснование", value: participant.matchRationale },
+    { label: "LLM-оценка", value: participant.matchSemanticReason },
     { label: "Бриф", value: participant.briefSummary },
+  ].filter((fact) => fact.value);
+  const activeProfileFacts = [
+    { label: "Бизнес", value: participant.businessMain },
+    { label: "Чем полезен", value: participant.businessExtra1 },
+    { label: "Цели в клубе", value: participant.businessExtra2 },
+    { label: "Интересы", value: participant.businessExtra3 },
   ].filter((fact) => fact.value);
 
   return (
@@ -1407,38 +1496,58 @@ function ParticipantDetails({
         </div>
       </section>
 
-      <section className="mt-4 grid gap-4 border-t pt-4 xl:grid-cols-2 2xl:grid-cols-1">
-        <BusinessBlockDetails
-          block={participant.businessProfile?.main ?? null}
-          fallbackSphere={participant.businessMain}
-          title="Основной бизнес"
-        />
-        <BusinessBlockDetails
-          block={participant.businessProfile?.extra1 ?? null}
-          fallbackSphere={participant.businessExtra1}
-          title="Доп бизнес 1"
-        />
-        <BusinessBlockDetails
-          block={participant.businessProfile?.extra2 ?? null}
-          fallbackSphere={participant.businessExtra2}
-          title="Доп бизнес 2"
-        />
-        <BusinessBlockDetails
-          block={participant.businessProfile?.extra3 ?? null}
-          fallbackSphere={participant.businessExtra3}
-          title="Доп бизнес 3"
-        />
-      </section>
+      {participant.kind === "ACTIVE" ? (
+        <section className="mt-4 grid gap-3 border-t pt-4 md:grid-cols-2">
+          {activeProfileFacts.length > 0 ? (
+            activeProfileFacts.map((fact) => (
+              <LongDetail key={fact.label} label={fact.label} value={fact.value} />
+            ))
+          ) : (
+            <Detail label="Профиль активного" value={null} />
+          )}
+        </section>
+      ) : (
+        <>
+          <section className="mt-4 grid gap-4 border-t pt-4 xl:grid-cols-2 2xl:grid-cols-1">
+            <BusinessBlockDetails
+              block={participant.businessProfile?.main ?? null}
+              fallbackSphere={participant.businessMain}
+              title="Основной бизнес"
+            />
+            <BusinessBlockDetails
+              block={participant.businessProfile?.extra1 ?? null}
+              fallbackSphere={participant.businessExtra1}
+              title="Доп бизнес 1"
+            />
+            <BusinessBlockDetails
+              block={participant.businessProfile?.extra2 ?? null}
+              fallbackSphere={participant.businessExtra2}
+              title="Доп бизнес 2"
+            />
+            <BusinessBlockDetails
+              block={participant.businessProfile?.extra3 ?? null}
+              fallbackSphere={participant.businessExtra3}
+              title="Доп бизнес 3"
+            />
+          </section>
 
-      <section className="mt-4 border-t pt-4">
-        <KeyValueDetails
-          emptyText="Не заполнено"
-          items={participant.enrichment}
-          labels={enrichmentLabels}
-          showEmptyRows
-          title="Обогащение"
-        />
-      </section>
+          <section className="mt-4 border-t pt-4">
+            <KeyValueDetails
+              emptyText="Не заполнено"
+              items={participant.enrichment}
+              labels={enrichmentLabels}
+              showEmptyRows
+              title="Обогащение"
+            />
+          </section>
+        </>
+      )}
+
+      {participant.relatedPotentialMatches?.length ? (
+        <section className="mt-4 border-t pt-4">
+          <RelatedPotentialMatches matches={participant.relatedPotentialMatches} />
+        </section>
+      ) : null}
 
       {participant.bitrixComment || matchingFacts.length > 0 ? (
         <section className="mt-4 grid gap-4 border-t pt-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)] 2xl:grid-cols-1">
@@ -1509,7 +1618,7 @@ function FormatsView({
                 ) : null}
               </div>
               <p className="text-sm text-muted-foreground">
-                Редактура линковки Bitrix, matching rules и prompts.
+                Редактура линковки Bitrix, правил подбора и промптов.
               </p>
             </div>
           </div>
@@ -1613,9 +1722,177 @@ function FormatsView({
                   value={editingFormat.bitrixEventTypeIdsText}
                 />
               </Field>
+              <div className="grid gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${fieldPrefix}-active-target`}>
+                    Нужно активных
+                  </FieldLabel>
+                  <Input
+                    disabled={!canManage}
+                    id={`${fieldPrefix}-active-target`}
+                    min={1}
+                    onChange={(event) =>
+                      onChange(
+                        editingFormat.draftKey,
+                        updateMatchingSettingsDraft(editingFormat, {
+                          matchingTargetActiveCount: event.target.value,
+                        })
+                      )
+                    }
+                    type="number"
+                    value={editingFormat.matchingTargetActiveCount}
+                  />
+                  <FieldDescription>
+                    Сколько активных должно доехать.
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${fieldPrefix}-active-buffer`}>
+                    Запас сверху
+                  </FieldLabel>
+                  <Input
+                    disabled={!canManage}
+                    id={`${fieldPrefix}-active-buffer`}
+                    min={0}
+                    onChange={(event) =>
+                      onChange(
+                        editingFormat.draftKey,
+                        updateMatchingSettingsDraft(editingFormat, {
+                          matchingBufferActiveCount: event.target.value,
+                        })
+                      )
+                    }
+                    type="number"
+                    value={editingFormat.matchingBufferActiveCount}
+                  />
+                  <FieldDescription>
+                    В список попадет{" "}
+                    {activeInviteTotalLabel(
+                      editingFormat.matchingTargetActiveCount,
+                      editingFormat.matchingBufferActiveCount
+                    )}
+                    .
+                  </FieldDescription>
+                </Field>
+              </div>
+              <div className="grid gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                <Field>
+                  <FieldLabel>Стоп-лист по истории</FieldLabel>
+                  <Select
+                    disabled={!canManage}
+                    onValueChange={(value) =>
+                      onChange(
+                        editingFormat.draftKey,
+                        updateMatchingSettingsDraft(editingFormat, {
+                          matchingRecentVisitMode:
+                            value as MatchingRecentVisitMode,
+                        })
+                      )
+                    }
+                    value={editingFormat.matchingRecentVisitMode}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="calendar_month">
+                          Исключать текущий месяц
+                        </SelectItem>
+                        <SelectItem value="rolling_months">
+                          Исключать последние N месяцев
+                        </SelectItem>
+                        <SelectItem value="off">Не исключать</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    Источник стоп-листа: история посещений форматов.
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${fieldPrefix}-recent-visit-months`}>
+                    Месяцев
+                  </FieldLabel>
+                  <Input
+                    disabled={
+                      !canManage ||
+                      editingFormat.matchingRecentVisitMode !== "rolling_months"
+                    }
+                    id={`${fieldPrefix}-recent-visit-months`}
+                    min={1}
+                    onChange={(event) =>
+                      onChange(
+                        editingFormat.draftKey,
+                        updateMatchingSettingsDraft(editingFormat, {
+                          matchingRecentVisitMonths: event.target.value,
+                        })
+                      )
+                    }
+                    type="number"
+                    value={editingFormat.matchingRecentVisitMonths}
+                  />
+                  <FieldDescription>
+                    Для режима “последние N месяцев”.
+                  </FieldDescription>
+                </Field>
+              </div>
+              <div className="grid gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                <Field>
+                  <FieldLabel>Предупреждение по свежести профилей</FieldLabel>
+                  <Select
+                    disabled={!canManage}
+                    onValueChange={(value) =>
+                      onChange(
+                        editingFormat.draftKey,
+                        updateMatchingSettingsDraft(editingFormat, {
+                          matchingFreshnessWarningEnabled: value === "on",
+                        })
+                      )
+                    }
+                    value={editingFormat.matchingFreshnessWarningEnabled ? "on" : "off"}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="off">Не помечать</SelectItem>
+                        <SelectItem value="on">Показывать предупреждение</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    Не блокирует подбор, только поднимает предупреждение в последнем запуске.
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${fieldPrefix}-freshness-days`}>
+                    Дней
+                  </FieldLabel>
+                  <Input
+                    disabled={!canManage || !editingFormat.matchingFreshnessWarningEnabled}
+                    id={`${fieldPrefix}-freshness-days`}
+                    min={1}
+                    onChange={(event) =>
+                      onChange(
+                        editingFormat.draftKey,
+                        updateMatchingSettingsDraft(editingFormat, {
+                          matchingFreshnessWarningDays: event.target.value,
+                        })
+                      )
+                    }
+                    type="number"
+                    value={editingFormat.matchingFreshnessWarningDays}
+                  />
+                  <FieldDescription>
+                    После этого окна запуск помечается как требующий проверки.
+                  </FieldDescription>
+                </Field>
+              </div>
               <Field>
                 <FieldLabel htmlFor={`${fieldPrefix}-rules`}>
-                  Matching rules
+                  Правила подбора
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
@@ -1623,6 +1900,7 @@ function FormatsView({
                   onChange={(event) =>
                     onChange(editingFormat.draftKey, {
                       matchingRulesText: event.target.value,
+                      ...matchingSettingsFromRulesText(event.target.value),
                     })
                   }
                   value={editingFormat.matchingRulesText}
@@ -1630,7 +1908,7 @@ function FormatsView({
               </Field>
               <Field>
                 <FieldLabel htmlFor={`${fieldPrefix}-potential`}>
-                  Prompt: потенциальные
+                  Промпт: потенциальные
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
@@ -1645,7 +1923,7 @@ function FormatsView({
               </Field>
               <Field>
                 <FieldLabel htmlFor={`${fieldPrefix}-active`}>
-                  Prompt: активные
+                  Промпт: активные
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
@@ -1660,7 +1938,7 @@ function FormatsView({
               </Field>
               <Field>
                 <FieldLabel htmlFor={`${fieldPrefix}-moderator`}>
-                  Prompt: модератор
+                  Промпт: модератор
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
@@ -1675,7 +1953,7 @@ function FormatsView({
               </Field>
               <Field>
                 <FieldLabel htmlFor={`${fieldPrefix}-report`}>
-                  Prompt: отчет по transcript
+                  Промпт: отчет по записи встречи
                 </FieldLabel>
                 <Textarea
                   disabled={!canManage}
@@ -1806,7 +2084,7 @@ function FormatSummaryCard({
       <CardFooter className="justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           <Badge variant={summary.hasMatchingRules ? "secondary" : "outline"}>
-            Matching {summary.hasMatchingRules ? "есть" : "нет"}
+            Правила подбора {summary.hasMatchingRules ? "есть" : "нет"}
           </Badge>
           <Badge
             variant={
@@ -1815,7 +2093,7 @@ function FormatSummaryCard({
                 : "outline"
             }
           >
-            Prompts {summary.completedPrompts}/{summary.totalPrompts}
+            Промпты {summary.completedPrompts}/{summary.totalPrompts}
           </Badge>
         </div>
       </CardFooter>
@@ -1866,7 +2144,12 @@ function CompactParticipantsStatus({
           className="flex items-center justify-between gap-3 text-xs"
           key={participant.id}
         >
-          <span className="min-w-0 truncate">{participant.fullName}</span>
+          <span className="flex min-w-0 items-center gap-1">
+            {participant.kind === "ACTIVE" && participant.matchOrder ? (
+              <MatchOrderBadge order={participant.matchOrder} />
+            ) : null}
+            <span className="min-w-0 truncate">{participant.fullName}</span>
+          </span>
           <div className="flex shrink-0 items-center gap-1">
             <KindBadge kind={participant.kind} />
             <ParticipantStatusBadge status={participant.status} />
@@ -2028,7 +2311,7 @@ function AccessView({
         <div className="grid gap-2 md:grid-cols-4">
           <IntegrationBadge label="PostgreSQL" ready={integrations.database} />
           <IntegrationBadge label="Bitrix24" ready={integrations.bitrix} />
-          <IntegrationBadge label="Matching API" ready={integrations.matching} />
+          <IntegrationBadge label="Профильный подбор" ready={integrations.matching} />
           <IntegrationBadge label="OpenRouter" ready={integrations.openrouter} />
         </div>
         <div className="overflow-hidden rounded-md border">
@@ -2153,6 +2436,90 @@ function LongDetail({ label, value }: { label: string; value?: string | null }) 
       <p className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm leading-6">
         {value}
       </p>
+    </div>
+  );
+}
+
+function BusinessSummary({
+  participant,
+}: {
+  participant: PauEventParticipant;
+}) {
+  const primary =
+    participant.kind === "ACTIVE"
+      ? participant.businessMain
+      : participant.businessProfile?.main?.sphere ?? participant.businessMain;
+  const secondary =
+    participant.kind === "ACTIVE"
+      ? participant.businessExtra1 ?? participant.businessExtra2
+      : participant.businessProfile?.main?.specifics ??
+        participant.businessProfile?.main?.role ??
+        participant.businessExtra1;
+
+  return (
+    <div className="flex max-w-80 flex-col gap-1 text-sm leading-5">
+      <span className="line-clamp-2 font-medium">
+        {primary ?? "Не заполнено"}
+      </span>
+      {secondary ? (
+        <span className="line-clamp-2 text-xs text-muted-foreground">
+          {secondary}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function RelatedPotentialMatches({
+  matches,
+}: {
+  matches: NonNullable<PauEventParticipant["relatedPotentialMatches"]>;
+}) {
+  const visibleMatches = matches.slice(0, 6);
+
+  return (
+    <div className="grid gap-2">
+      <span className="text-[11px] font-medium uppercase leading-4 text-muted-foreground">
+        Подходит к потенциалам
+      </span>
+      <div className="grid gap-2">
+        {visibleMatches.map((match) => (
+          <div
+            className="grid gap-2 rounded-md border bg-background p-3"
+            key={`${match.potentialId}:${match.finalScore}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="break-words text-sm font-medium">
+                  {match.potentialName}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  score {match.finalScore.toFixed(2)}
+                  {typeof match.semanticScore === "number"
+                    ? ` · LLM ${match.semanticScore.toFixed(2)}`
+                    : ""}
+                </p>
+              </div>
+              <Badge variant="outline">{formatPercent(match.confidence)}</Badge>
+            </div>
+            {match.semanticReason || match.rationale ? (
+              <p className="text-sm leading-5">
+                {match.semanticReason ?? match.rationale}
+              </p>
+            ) : null}
+            {match.introTopic ? (
+              <p className="text-xs leading-5 text-muted-foreground">
+                {match.introTopic}
+              </p>
+            ) : null}
+            {match.risks.length ? (
+              <p className="text-xs leading-5 text-muted-foreground">
+                Риски: {match.risks.join(", ")}
+              </p>
+            ) : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2283,7 +2650,7 @@ function IntegrationBadge({ label, ready }: { label: string; ready: boolean }) {
     <div className="flex items-center justify-between gap-3 rounded-md border bg-card p-3 text-sm">
       <span>{label}</span>
       <Badge variant={ready ? "secondary" : "outline"}>
-        {ready ? "ready" : "off"}
+        {ready ? "готово" : "выключено"}
       </Badge>
     </div>
   );
@@ -2328,6 +2695,10 @@ function ActiveDecisionBadge({ decision }: { decision: ActiveDecision }) {
   );
 }
 
+function MatchOrderBadge({ order }: { order: number }) {
+  return <Badge variant="outline">{order}</Badge>;
+}
+
 function KindBadge({ kind }: { kind: PauEventParticipant["kind"] }) {
   return <Badge variant={kind === "ACTIVE" ? "secondary" : "outline"}>{kind}</Badge>;
 }
@@ -2369,6 +2740,49 @@ function activeDecisionLabel(decision: ActiveDecision) {
   return labels[decision];
 }
 
+function latestMatchStatusLabel(status: NonNullable<PauEvent["latestMatch"]>["status"]) {
+  const labels: Record<NonNullable<PauEvent["latestMatch"]>["status"], string> = {
+    SUCCESS: "подбор в норме",
+    DEGRADED: "подбор с предупреждением",
+    FAILED: "подбор упал",
+  };
+  return labels[status];
+}
+
+function latestMatchSemanticLabel(
+  status: NonNullable<PauEvent["latestMatch"]>["semanticStatus"]
+) {
+  if (status === "applied") {
+    return "OpenRouter применен";
+  }
+  if (status === "failed") {
+    return "OpenRouter не применился";
+  }
+  if (status === "skipped_no_key") {
+    return "без OpenRouter";
+  }
+  if (status === "skipped_empty") {
+    return "пустой кандидатный пул";
+  }
+  if (status === "shadow") {
+    return "теневой режим";
+  }
+  if (status === "capped") {
+    return "OpenRouter применен";
+  }
+  return "неизвестно";
+}
+
+function latestMatchDegradedReasonLabel(reason: string) {
+  if (reason === "semantic_rerank_failed") {
+    return "OpenRouter не ответил или вернул ошибку. Оставлен расчетный результат.";
+  }
+  if (reason === "stale_source_data") {
+    return "В подбор попали профили со старой синхронизацией. Нужна ручная проверка.";
+  }
+  return reason;
+}
+
 function formatDate(value: string | null) {
   if (!value) {
     return "дата не задана";
@@ -2388,6 +2802,15 @@ function formatPercent(value: number) {
 
 function formatInteger(value: number) {
   return new Intl.NumberFormat("ru-RU").format(value);
+}
+
+function activeInviteTotalLabel(targetValue: string, bufferValue: string) {
+  return formatInteger(
+    activeInviteTotalFromDraft({
+      matchingTargetActiveCount: targetValue,
+      matchingBufferActiveCount: bufferValue,
+    })
+  );
 }
 
 function ClockIcon() {

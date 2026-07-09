@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { toOpenRouterTitleHeader } from "@/lib/openrouter/headers";
+
 export type BriefType = "POTENTIAL" | "ACTIVE" | "MODERATOR";
 
 export type BriefInput = {
@@ -151,7 +153,7 @@ export async function generateBriefWithOpenRouter(
       headers: {
         Authorization: `Bearer ${options.apiKey}`,
         "Content-Type": "application/json",
-        "X-OpenRouter-Title": options.appTitle,
+        "X-OpenRouter-Title": toOpenRouterTitleHeader(options.appTitle),
       },
       body: JSON.stringify({
         model: options.model,
@@ -196,7 +198,7 @@ export async function generateReportWithOpenRouter(
       headers: {
         Authorization: `Bearer ${options.apiKey}`,
         "Content-Type": "application/json",
-        "X-OpenRouter-Title": options.appTitle,
+        "X-OpenRouter-Title": toOpenRouterTitleHeader(options.appTitle),
       },
       body: JSON.stringify({
         model: options.model,

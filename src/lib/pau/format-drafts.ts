@@ -1,25 +1,42 @@
 import type { PauFormat } from "@/lib/pau/types";
 import { isSafeFormatSlug } from "@/lib/pau/format-slugs";
+import {
+  draftToMatchingRules,
+  matchingSettingsToDraft,
+  type MatchingRecentVisitMode,
+  type MatchingSettingsDraft,
+} from "@/lib/matching/matching-settings";
 
 export type FormatDraft = Omit<PauFormat, "bitrixEventTypeIds" | "matchingRules"> & {
   draftKey: string;
   isNew: boolean;
   bitrixEventTypeIdsText: string;
   matchingRulesText: string;
+  matchingRecentVisitMode: MatchingRecentVisitMode;
+  matchingRecentVisitMonths: string;
+  matchingTargetActiveCount: string;
+  matchingBufferActiveCount: string;
+  matchingFreshnessWarningEnabled: boolean;
+  matchingFreshnessWarningDays: string;
 };
 
 const NEW_FORMAT_BASE_SLUG = "new-format";
 
+export type { MatchingRecentVisitMode, MatchingSettingsDraft };
+
 export function toFormatDraft(format: PauFormat): FormatDraft {
+  const matchingRulesText =
+    typeof format.matchingRules === "string"
+      ? format.matchingRules
+      : JSON.stringify(format.matchingRules ?? {}, null, 2);
+
   return {
     ...format,
     draftKey: format.slug,
     isNew: false,
     bitrixEventTypeIdsText: format.bitrixEventTypeIds.join(", "),
-    matchingRulesText:
-      typeof format.matchingRules === "string"
-        ? format.matchingRules
-        : JSON.stringify(format.matchingRules ?? {}, null, 2),
+    matchingRulesText,
+    ...matchingSettingsFromRulesText(matchingRulesText),
   };
 }
 
@@ -43,6 +60,7 @@ export function createFormatDraft(
     bitrixSyncTitleQuery: "",
     bitrixEventTypeIdsText: "",
     matchingRulesText: "{}",
+    ...matchingSettingsToDraft({}),
     promptPotential: "",
     promptActive: "",
     promptModerator: "",
@@ -83,6 +101,9 @@ export function validateFormatDrafts(drafts: FormatDraft[]) {
     if (!name) {
       return "Название формата обязательно.";
     }
+    if (!isJsonObjectText(draft.matchingRulesText)) {
+      return `Matching rules должен быть JSON-объектом: ${slug}.`;
+    }
 
     seenSlugs.add(slug);
   }
@@ -102,12 +123,69 @@ export function formatDraftToPatch(format: FormatDraft) {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
-    matchingRules: parseJsonOrString(format.matchingRulesText),
+    matchingRules: parseJsonOrString(
+      matchingRulesTextWithSettings(format.matchingRulesText, format)
+    ),
     promptPotential: format.promptPotential,
     promptActive: format.promptActive,
     promptModerator: format.promptModerator,
     promptReport: format.promptReport,
   };
+}
+
+export function matchingSettingsFromRulesText(
+  matchingRulesText: string
+): MatchingSettingsDraft {
+  const rules = parseJsonObject(matchingRulesText);
+  return matchingSettingsToDraft(rules ?? {});
+}
+
+export function updateMatchingSettingsDraft(
+  format: Pick<
+    FormatDraft,
+    | "matchingRulesText"
+    | "matchingRecentVisitMode"
+    | "matchingRecentVisitMonths"
+    | "matchingTargetActiveCount"
+    | "matchingBufferActiveCount"
+    | "matchingFreshnessWarningEnabled"
+    | "matchingFreshnessWarningDays"
+  >,
+  patch: Partial<MatchingSettingsDraft>
+): MatchingSettingsDraft & { matchingRulesText: string } {
+  const next = {
+    matchingRecentVisitMode:
+      patch.matchingRecentVisitMode ?? format.matchingRecentVisitMode,
+    matchingRecentVisitMonths:
+      patch.matchingRecentVisitMonths ?? format.matchingRecentVisitMonths,
+    matchingTargetActiveCount:
+      patch.matchingTargetActiveCount ?? format.matchingTargetActiveCount,
+    matchingBufferActiveCount:
+      patch.matchingBufferActiveCount ?? format.matchingBufferActiveCount,
+    matchingFreshnessWarningEnabled:
+      patch.matchingFreshnessWarningEnabled ??
+      format.matchingFreshnessWarningEnabled,
+    matchingFreshnessWarningDays:
+      patch.matchingFreshnessWarningDays ??
+      format.matchingFreshnessWarningDays,
+  };
+
+  return {
+    ...next,
+    matchingRulesText: matchingRulesTextWithSettings(format.matchingRulesText, next),
+  };
+}
+
+function matchingRulesTextWithSettings(
+  matchingRulesText: string,
+  settings: MatchingSettingsDraft
+) {
+  const rules = parseJsonObject(matchingRulesText);
+  if (!rules) {
+    return matchingRulesText;
+  }
+
+  return JSON.stringify(draftToMatchingRules(rules, settings), null, 2);
 }
 
 function nextAvailableSlug(existingSlugs: string[], baseSlug: string) {
@@ -135,4 +213,19 @@ function parseJsonOrString(value: string) {
   } catch {
     return trimmed;
   }
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  const parsed = parseJsonOrString(value);
+  return asRecord(parsed);
+}
+
+function isJsonObjectText(value: string) {
+  return parseJsonObject(value) !== null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
